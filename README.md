@@ -8,14 +8,14 @@ It works because Packet Tracer's Desktop apps and extension windows are web page
 
 You need Packet Tracer 9.0.1 and a DOOM game file (a WAD).
 
-**The WAD is not included**: it's id Software's, so you bring your own. The free shareware episode's **doom1.wad** works. To get it:
+**The WAD is not included**: it's id Software's, so you bring your own. The free shareware episode's **doom1.wad** works. To get one:
 
 - Download it from the link on Doom Wiki's [DOOM1.WAD page](https://doomwiki.org/wiki/DOOM1.WAD). The right file (v1.9) is 4,196,020 bytes, SHA-1 `5b2e249b9c5133ec987b3ea77596381dc0d6bc1d`.
 - With Python: `python tools/fetch_wad.py` in a copy of this repo. It downloads doom1.wad from Debian's `doom-wad-shareware` package, checks it, and saves it as `wad/doom1.wad`.
 - Or use a copy you already have: the installer also accepts `doom.wad` (for example from DOOM on Steam or GOG) and `doom2.wad` (untested).
 - Or play [Freedoom](https://freedoom.github.io/) instead: a free, complete replacement for DOOM's data by volunteers, with its own art and levels. `freedoom1.wad` from its [download](https://github.com/freedoom/freedoom/releases) works (tested with v0.13.0).
 
-1. Download [PTDoom-installer.pkt](PTDoom-installer.pkt) and open it in Packet Tracer.
+1. Download [PTDoom-installer.pkt](https://github.com/unoriginalnickname/PTDoom/raw/master/PTDoom-installer.pkt) and open it in Packet Tracer.
 2. Packet Tracer asks whether to allow the file's script. Allow it, and the **Install DOOM** window opens.
 3. Choose your WAD.
 4. Save the file under a new name (**File → Save As**): that copy has the game in it.
@@ -47,7 +47,7 @@ python tools/make_app.py
 - `dist/install-app.js` installs DOOM, WAD included, on every PC and laptop on the canvas (or those listed in `DEVICES`). Running it again updates them.
 - `dist/doom-command.js` makes typing `doom` in any PC's Command Prompt open the game in a separate window. It runs until Packet Tracer closes.
 
-To remake the installer: install the app without `[gui]wad.js` and with `dist/app/icon-generic.png` as the icon, then in **Extensions → Scripting → Edit File Script Module** import `pt/installer/ptdoom.js` (Script Engine) and `pt/installer/installer.html` and `play.html` (Custom Interfaces), and tick Get Network Info, Change Network Info, Change User Interface and Miscellaneous UI under General → Security. Save with Packet Tracer's own **File → Save**.
+To remake the installer: install the app without `[gui]wad.js` and with `dist/app/icon-generic.png` as the icon, then in **Extensions → Scripting → Edit File Script Module** import `pt/installer/ptdoom.js` (Script Engine) and `pt/installer/installer.html` and `play.html` (Custom Interfaces), and under General → Security tick Get Network Info, Change Network Info, Change User Interface, Miscellaneous UI, and Allow opening file even if security privileges are not granted. Save with Packet Tracer's own **File → Save**.
 
 ## Known issues
 
