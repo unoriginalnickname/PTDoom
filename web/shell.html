@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DOOM</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #canvas { display: block; width: 100%; height: 100%; object-fit: contain;
+            image-rendering: pixelated; outline: none; }
+  #status { position: fixed; top: 8px; left: 8px; color: #b00;
+            font: 14px monospace; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+<div id="status">loading...</div>
+<script>
+  // Not "status": that name is window.status, which turns anything into a string.
+  var statusEl = document.getElementById('status');
+  var canvas = document.getElementById('canvas');
+  window.onerror = function (msg) { statusEl.style.display = ''; statusEl.textContent = 'error: ' + msg; };
+  var Module = {
+    canvas: canvas,
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.error(t); },
+    setStatus: function (t) { if (t) statusEl.textContent = t; },
+    onRuntimeInitialized: function () { statusEl.style.display = 'none'; canvas.focus(); },
+    // Quit from the menu: leave a marker in the URL. pt/doom-command.js
+    // polls the window's URL and closes the window when it sees it.
+    onExit: gameOver,
+    quit: function (code, err) { gameOver(); throw err; }
+  };
+  function gameOver() {
+    if (location.hash !== '#doom-exited') location.replace('about:blank#doom-exited');
+  }
+  canvas.addEventListener('click', function () { canvas.focus(); });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>
