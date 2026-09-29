@@ -13,10 +13,11 @@ import sys
 import tarfile
 import tempfile
 
+from paths import WAD as DEST
+
 URL = ("https://deb.debian.org/debian/pool/non-free/d/doom-wad-shareware/"
        "doom-wad-shareware_1.9.fixed-5_all.deb")
 SHA1 = "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d"
-DEST = pathlib.Path(__file__).resolve().parent.parent / "wad" / "doom1.wad"
 
 
 def wad_from_deb(deb: bytes) -> bytes:

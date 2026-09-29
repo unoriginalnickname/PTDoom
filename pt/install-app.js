@@ -1,9 +1,9 @@
-// Install DOOM as a Desktop app on one Packet Tracer PC.
+// Install DOOM as a Desktop app on Packet Tracer PCs.
 //
-// Run in Packet Tracer's Script Engine, for example with packet-tracer-mcp's
-// pt_send_raw (it takes one expression, hence the wrapper function). Set
-// DEVICE and APP_DIR first. Needs dist/app/ from tools/split_app.py and
-// tools/make_icon.py.
+// Run dist/install-app.js, not this file: tools/make_app.py writes it with
+// the repo's path filled in. Run it in Packet Tracer's Script Engine, for
+// example with packet-tracer-mcp's pt_send_raw, which takes one expression,
+// hence the wrapper function. Running it again updates the installed copies.
 //
 // How it works: a desktop app is a project folder on the device's Dev: file
 // system. Files prefixed [gui] belong to the page. The page itself is loaded
@@ -12,13 +12,16 @@
 // lives in [gui]doom.js. Packet Tracer keeps binary files such as the icon as
 // base64 text, which is what getFileBinaryContents returns.
 (function () {
-  var DEVICE = "PC0";
-  var APP_DIR = "F:/work/coding/ClaudeWork/PTDoom/dist/app/";
+  // Device names to install on; empty means every PC and laptop.
+  var DEVICES = [];
+  var TYPE = "Pc";  // laptops report this class too
+  var APP_DIR = "__PTDOOM_DIST__/app/";
 
-  var NAME = "com.ptdoom.doom (Python)";
+  var ID = "com.ptdoom.doom";
+  var FOLDER = ID + " (Python)";
   var MANIFEST = [
     "<application>",
-    "<id>com.ptdoom.doom</id>",
+    "<id>" + ID + "</id>",
     "<version>1.0</version>",
     "<name>DOOM</name>",
     "<description>DOOM (doomgeneric, shareware episode).</description>",
@@ -28,8 +31,6 @@
     "<html>index.html</html>",
     "<icon>icon.png</icon>",
     "</gui>",
-    "<auto-install>",
-    "</auto-install>",
     "</application>",
     ""].join("\n");
   // Python, not JavaScript: a main.js failed with "undefined is not a
@@ -47,27 +48,50 @@
     "    main()",
     ""].join("\n");
 
-  var device = ipc.network().getDevice(DEVICE);
-  if (!device) return "no device named " + DEVICE;
   var sfm = ipc.systemFileManager();
-  var page = sfm.getFileContents(APP_DIR + "index.html");
-  var js = sfm.getFileContents(APP_DIR + "doom.js");
-  var icon = sfm.getFileBinaryContents(APP_DIR + "icon.png");
-  if (!page || !js || !icon) return "missing files in " + APP_DIR;
+  var files = {
+    "app_manifest.xml": MANIFEST,
+    "main.py": MAIN_PY,
+    "[gui]index.html": sfm.getFileContents(APP_DIR + "index.html"),
+    "[gui]doom.js": sfm.getFileContents(APP_DIR + "doom.js"),
+    "[gui]icon.png": sfm.getFileBinaryContents(APP_DIR + "icon.png")
+  };
+  for (var f in files) {
+    if (!files[f]) return "missing " + f + " in " + APP_DIR + ": run tools/make_app.py";
+  }
 
-  var root = device.getProcess("FileManager").getFileSystem("Dev:");
-  // addDirectory throws "File exists" on a reinstall.
-  if (!root.fileExist(NAME)) root.addDirectory(NAME, true);
-  var dir = root.getFile(NAME);
-  // addTextFile won't replace a file, so clear old copies first.
-  ["app_manifest.xml", "main.py", "[gui]index.html", "[gui]doom.js", "[gui]icon.png"].forEach(function (f) {
-    if (dir.fileExist(f)) dir.removeFile(f, true);
-  });
-  dir.addTextFile("app_manifest.xml", MANIFEST, true);
-  dir.addTextFile("main.py", MAIN_PY, true);
-  dir.addTextFile("[gui]index.html", page, true);
-  dir.addTextFile("[gui]doom.js", js, true);
-  dir.addTextFile("[gui]icon.png", icon, true);
-  if (!device.getUserDesktopAppById("com.ptdoom.doom")) device.addUserDesktopApp(NAME);
-  return "installed on " + DEVICE + ": doom.js " + dir.getFile("[gui]doom.js").getSize() + " bytes";
+  function install(device) {
+    var root = device.getProcess("FileManager").getFileSystem("Dev:");
+    // addDirectory throws "File exists" on a reinstall, and addTextFile
+    // won't replace a file, so clear old copies first.
+    if (!root.fileExist(FOLDER)) root.addDirectory(FOLDER, true);
+    var dir = root.getFile(FOLDER);
+    for (var name in files) {
+      if (dir.fileExist(name)) dir.removeFile(name, true);
+      dir.addTextFile(name, files[name], true);
+    }
+    if (!device.getUserDesktopAppById(ID)) device.addUserDesktopApp(FOLDER);
+  }
+
+  var net = ipc.network();
+  var targets = [];
+  if (DEVICES.length) {
+    for (var i = 0; i < DEVICES.length; i++) {
+      var d = net.getDevice(DEVICES[i]);
+      if (!d) return "no device named " + DEVICES[i];
+      targets.push(d);
+    }
+  } else {
+    for (var j = 0; j < net.getDeviceCount(); j++) {
+      var dev = net.getDeviceAt(j);
+      if (dev.getClassName() === TYPE) targets.push(dev);
+    }
+  }
+  if (!targets.length) return "no PCs or laptops on the canvas";
+  var names = [];
+  for (var k = 0; k < targets.length; k++) {
+    install(targets[k]);
+    names.push(targets[k].getName());
+  }
+  return "DOOM installed on " + names.join(", ");
 })()

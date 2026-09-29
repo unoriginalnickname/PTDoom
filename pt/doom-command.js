@@ -13,9 +13,10 @@
 // Quitting from the game's menu sends the page to about:blank#doom-exited
 // (see web/shell.html); the watcher sees that URL and closes the window.
 //
-// Edit DOOM_URL if the repo lives somewhere else.
+// Run dist/doom-command.js, not this file: tools/make_app.py writes it with
+// the repo's path filled in.
 (function () {
-  var DOOM_URL = "file:///F:/work/coding/ClaudeWork/PTDoom/dist/doom.html";
+  var DOOM_URL = "file:///__PTDOOM_DIST__/doom.html";
   var g = (function () { return this; })();
   if (g.__ptDoomTimer) clearInterval(g.__ptDoomTimer);
   g.__ptDoomSeen = {};

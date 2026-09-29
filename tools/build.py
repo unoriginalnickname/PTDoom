@@ -5,16 +5,14 @@ embedded), so Packet Tracer's web view can load it from disk with setUrl.
 
 Run from an Emscripten environment (emsdk_env), after tools/fetch_wad.py.
 """
-import pathlib
 import shutil
 import subprocess
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+from paths import DOOM_HTML as OUT, ROOT, WAD
+
 SRC = ROOT / "vendor" / "doomgeneric" / "doomgeneric"
-WAD = ROOT / "wad" / "doom1.wad"
 OBJ = ROOT / "build"
-OUT = ROOT / "dist" / "doom.html"
 
 # Same list as doomgeneric's Makefile.emscripten.
 SOURCES = """dummy am_map doomdef doomstat dstrings d_event d_items d_iwad d_loop

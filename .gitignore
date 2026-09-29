@@ -2,3 +2,4 @@ wad/
 build/
 dist/
 vendor/
+__pycache__/
