@@ -1,6 +1,6 @@
-// Install the DOS app (js-dos) as a Desktop app on Packet Tracer PCs.
+// Install the DOS app (v86 and FreeDOS) as a Desktop app on Packet Tracer PCs.
 //
-// Run dist/install-dos-app.js, not this file: tools/make_dos_app.py writes it with
+// Run dist/install-v86-app.js, not this file: tools/make_v86_app.py writes it with
 // the repo's path filled in. Run it in Packet Tracer's Script Engine, for
 // example with packet-tracer-mcp's pt_send_raw, which takes one expression,
 // hence the wrapper function. Running it again updates the installed copies.
@@ -8,16 +8,15 @@
 // How it works: a desktop app is a project folder on the device's Dev: file
 // system. Files prefixed [gui] belong to the page. The page itself is loaded
 // as a data: URL capped at 2 MB, but Packet Tracer rewrites references to the
-// other [gui] files into user-app: URLs with no such cap, so js-dos lives in
-// [gui]jsdos.js, the emulator in [gui]emulators.js and the game in
-// [gui]game.js (see tools/make_dos_app.py). Packet Tracer keeps
-// binary files such as the icon as base64 text, which is what
-// getFileBinaryContents returns.
+// other [gui] files into user-app: URLs with no such cap, so v86 lives in
+// [gui]libv86.js, its data in [gui]v86data.js and the game in [gui]game.js
+// (see tools/make_v86_app.py). Packet Tracer keeps binary files such as the
+// icon as base64 text, which is what getFileBinaryContents returns.
 (function () {
   // Device names to install on; empty means every PC and laptop.
   var DEVICES = [];
   var TYPE = "Pc";  // laptops report this class too
-  var APP_DIR = "__PTDOOM_DIST__/dosapp/";
+  var APP_DIR = "__PTDOOM_DIST__/v86app/";
 
   var ID = "com.ptdoom.dos";
   var FOLDER = ID + " (Python)";
@@ -26,7 +25,7 @@
     "<id>" + ID + "</id>",
     "<version>1.0</version>",
     "<name>DOS</name>",
-    "<description>A DOS game in DOSBox (js-dos).</description>",
+    "<description>A DOS game in FreeDOS in v86.</description>",
     "<author>PTDoom</author>",
     "<gui>",
     "<name>DOS</name>",
@@ -51,7 +50,7 @@
     "",
     "def cliEvent(type, args):",
     "    if type == \"invoked\":",
-    "        print(\"DOSBox (js-dos). Play it from Desktop > DOS.\")",
+    "        print(\"FreeDOS in v86. Play it from Desktop > DOS.\")",
     "        CLI.exit()",
     "",
     "def main():",
@@ -69,14 +68,18 @@
     "app_manifest.xml": MANIFEST,
     "main.py": MAIN_PY,
     "[gui]index.html": sfm.getFileContents(APP_DIR + "index.html"),
-    "[gui]jsdos.js": sfm.getFileContents(APP_DIR + "jsdos.js"),
-    "[gui]emulators.js": sfm.getFileContents(APP_DIR + "emulators.js"),
+    "[gui]ptdos.js": sfm.getFileContents(APP_DIR + "ptdos.js"),
+    "[gui]libv86.js": sfm.getFileContents(APP_DIR + "libv86.js"),
+    "[gui]v86data.js": sfm.getFileContents(APP_DIR + "v86data.js"),
     "[gui]game.js": sfm.getFileContents(APP_DIR + "game.js"),
     "[gui]icon.png": sfm.getFileBinaryContents(APP_DIR + "icon.png")
   };
   for (var f in files) {
-    if (!files[f]) return "missing " + f + " in " + APP_DIR + ": run tools/make_dos_app.py";
+    if (!files[f]) return "missing " + f + " in " + APP_DIR + ": run tools/make_v86_app.py";
   }
+
+  // The js-dos version's files, gone since v86 replaced it.
+  var OLD = ["[gui]jsdos.js", "[gui]emulators.js"];
 
   function install(device) {
     var root = device.getProcess("FileManager").getFileSystem("Dev:");
@@ -84,6 +87,9 @@
     // won't replace a file, so clear old copies first.
     if (!root.fileExist(FOLDER)) root.addDirectory(FOLDER, true);
     var dir = root.getFile(FOLDER);
+    for (var o = 0; o < OLD.length; o++) {
+      if (dir.fileExist(OLD[o])) dir.removeFile(OLD[o], true);
+    }
     for (var name in files) {
       if (dir.fileExist(name)) dir.removeFile(name, true);
       dir.addTextFile(name, files[name], true);

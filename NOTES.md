@@ -77,7 +77,7 @@ Nobody seems to have run a DOS emulator or game in Packet Tracer before (searche
 - `[sdl] autolock=true` made every click in Packet Tracer re-request pointer lock (a stream of prompts). Off, and `use_mouse 0` in DOOM's `DEFAULT.CFG`.
 - **Sound: js-dos's AudioWorklet player is broken here** (high-pitched, choppy, whatever the cycles). It's hard-coded (`audioWorklet:!0` in `js-dos.js`); the test copy patches it to `window.__ptAudioWorklet!==false` and `a=0` turns it off. The fallback ScriptProcessor player sounds right. Its buffer was also raised (2048 → 4096 per callback, queue 6144 → 16384, start at 6144); no audible difference.
 - **Speed**: `cycles=max` starves the audio; `fixed 20000` buzzed; `fixed 15000` is clean apart from crackle on gunshots, which lower volumes (sfx 5, music 6) didn't fix. Left for later: maybe 8-bit 11 kHz effects upsampled without filtering, or the ScriptProcessor running late on the main thread.
-- **Desktop app works** (`com.ptdoom.dos (Python)`, icon `C:\>_`): `tools/make_dos_app.py` writes `dist/dosapp/` and `dist/install-dos-app.js` (from `pt/install-dos-app.js`). DOS DOOM plays inside the PC's window, sounds like the file:// test, and quitting leaves DOSBox at `C:\>`.
+- **Desktop app worked** (replaced by v86 below; the js-dos build, `tools/make_dos_app.py` and `web/ptdos-shim.js`, is in commit f95bf47): `dist/dosapp/`, DOS DOOM plays inside the PC's window, sounds like the file:// test, and quitting leaves DOSBox at `C:\>`.
   - Nothing is loaded by URL: `web/ptdos-shim.js` answers `fetch` and `XMLHttpRequest` for `https://ptdos.invalid/` from base64 in `window.PTDOS_FILES`. The XHR fake shadows `readyState`/`status`/`response` with own properties.
   - js-dos skips loading `emulators.js` when a `<script id="emulators-js">` exists, so the page includes it; then set `emulators.pathPrefix` yourself.
   - The Worker is made from a `fetch` of `wdosbox.js` turned into a blob URL: works from the app's `data:` page too.
@@ -93,13 +93,20 @@ v86 0.5.462 (npm `v86`: `libv86.js`, `v86.wasm`; `bios/seabios.bin` and `vgabios
 - **Packet Tracer's AudioWorklet is bad for v86 too**: crackle, and slower. `?sa=0` hides `window.AudioWorklet`, so v86 uses its fallback player (`SpeakerBufferSourceDAC`): "near perfect", sound and speed. So the fault is Packet Tracer's AudioWorklet, not js-dos's time-stretcher alone.
 - **Faster than js-dos** and cleaner sound: v86 is the better base.
 - **No music**: v86's SB16 accepts FM (OPL) register writes and ignores them (`fm_default_write`). DOOM's config uses music device 0; SB IRQ 5, DMA 1 (v86's defaults).
-- The disk is 16 MB, mostly zeros, so `disk.js` is 22 MB of base64: shrink it, or build the disk in the page.
+- The test's disk is 16 MB, mostly zeros, so `disk.js` is 22 MB of base64. The app builds its disk in the page instead.
+
+**The DOS app now runs on v86** (same id `com.ptdoom.dos`, icon `C:\>_`). `tools/make_v86_app.py` writes `dist/v86app/` and `dist/install-v86-app.js` (from `pt/install-v86-app.js`, which also removes the js-dos files).
+
+- `web/v86-dos.js` (installed as `[gui]ptdos.js`) unzips the game (`DecompressionStream("deflate-raw")`, own zip reader) and builds drive C: as FAT16 in the page: subfolders, empty folders, 8.3 names (`LONG_F~1.TXT`), at least 32 MB with 16 MB free for saves. Tested in Node with a stand-in `V86` and checked with 7-Zip.
+- The game zip needs `PTDOS.BAT` at the top; the floppy's `AUTOEXEC.BAT` is patched at build time (`patch_autoexec`, FAT12, fits its one cluster) to run `C:\PTDOS.BAT`. Quitting the game leaves `C:\>`.
+- **No sound in the PC's window at first**: the AudioContext starts suspended there (autoplay rules) and v86 only resumes it on `emulator-started`. The page wraps `AudioContext` to keep its instances and resumes them on key or mouse. Fixed; the URL-loaded window never had this.
 
 ## To do
 
 Done: `doom` command tested by hand (prints the banner; with `doom-command.js` running, the game window opens too, confirmed). Pushed to https://github.com/unoriginalnickname/PTDoom (public, no-reply author email).
 
-1. DOS app on v86 instead of js-dos, with an installer in the .pkt that asks for a game, like the WAD.
-2. Floppy drive: drop a disk image on the app to insert it (v86 `set_fda` / `eject_fda` at runtime). The user's idea.
-3. Music under v86: feed its FM register writes to an OPL3 emulator (Nuked OPL3 is already in `src/music/`).
-4. Maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
+1. Music under v86: feed its FM register writes to an OPL3 emulator (Nuked OPL3 is already in `src/music/`).
+2. An installer in the .pkt that asks for a game (.zip), like the WAD; it has to write PTDOS.BAT (ask for the command).
+3. Floppy drive: insert a disk image while running (v86 `set_fda` / `eject_fda`). The user's idea; the Desktop probably has no drag and drop, so a button with a file picker, if a picker works in a PC's window.
+4. Before publishing FreeDOS in a .pkt: the copy.sh floppy also carries games and tools of unclear licence (ROGUE.EXE, vim, nasm...); strip them or build a clean FreeDOS floppy.
+5. Maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.

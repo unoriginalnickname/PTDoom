@@ -1,0 +1,181 @@
+"""Make the DOS Desktop app's files: v86, FreeDOS and a game.
+
+Output, in dist/v86app/:
+  index.html   small page
+  ptdos.js     web/v86-dos.js: unzips the game, builds drive C:, boots v86
+  libv86.js    v86
+  v86data.js   BIOS, VGA BIOS, FreeDOS floppy and v86.wasm, as base64
+  game.js      the game, a .zip, as base64
+  icon.png     a DOS prompt
+and dist/install-v86-app.js, pt/install-v86-app.js with this repo's path filled in.
+
+The game is a .zip given on the command line; it must hold PTDOS.BAT, which
+the floppy's AUTOEXEC.BAT runs from C:. With no argument, shareware DOOM from
+dosgames/doom/ is zipped with a PTDOS.BAT that runs it.
+
+v86 comes from vendor/v86/ (npm package v86, plus bios/*.bin from its GitHub
+repo), FreeDOS from dosgames/freedos/freedos722.img (https://i.copy.sh/freedos722.img).
+"""
+import base64
+import io
+import json
+import struct
+import sys
+import zipfile
+
+from PIL import Image, ImageDraw, ImageFont
+
+from paths import DIST, ROOT
+
+V86 = ROOT / "vendor" / "v86"
+OUT = DIST / "v86app"
+FLOPPY = ROOT / "dosgames" / "freedos" / "freedos722.img"
+DOOM_DIR = ROOT / "dosgames" / "doom"
+
+AUTOEXEC = """@echo off
+set PATH=A:\\FDOS
+if exist C:\\PTDOS.BAT goto game
+echo.
+echo FreeDOS in Packet Tracer. No game found (C:\\PTDOS.BAT).
+echo.
+goto end
+:game
+C:
+call C:\\PTDOS.BAT
+:end
+""".replace("\n", "\r\n")
+
+# v86's SB16: port 220, IRQ 5, DMA 1. No FM synthesis, so no music.
+DOOM_CFG = """mouse_sensitivity 5
+sfx_volume 8
+music_volume 8
+show_messages 1
+use_mouse 0
+use_joystick 0
+snd_channels 8
+snd_musicdevice 0
+snd_sfxdevice 3
+snd_sbport 544
+snd_sbirq 5
+snd_sbdma 1
+snd_mport 816
+screenblocks 10
+detaillevel 0
+usegamma 0
+""".replace("\n", "\r\n")
+
+# Names the page mentions. Packet Tracer rewrites every occurrence of a [gui]
+# file's name in the page, so none may contain another.
+PAGE = """<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#screen{display:flex;align-items:center;justify-content:center;height:100%}
+#screen div{white-space:pre;font:14px monospace;line-height:14px;color:#ccc}
+#screen canvas{image-rendering:pixelated;height:100%;max-width:100%;object-fit:contain}
+#log{position:fixed;bottom:0;left:0;margin:0;color:#8f8;font:11px monospace;background:rgba(0,0,0,.6);z-index:99}
+</style></head><body>
+<div id="screen"><div></div><canvas style="display:none"></canvas></div><pre id="log"></pre>
+<script src="libv86.js"></script>
+<script src="v86data.js"></script>
+<script src="game.js"></script>
+<script src="ptdos.js"></script>
+</body></html>
+"""
+
+
+def patch_autoexec(img: bytes) -> bytes:
+    """Replace AUTOEXEC.BAT on a FAT12 floppy; the new file must fit its old clusters."""
+    img = bytearray(img)
+    bps, spc, reserved, nfats, root_entries = struct.unpack_from("<HBHBH", img, 11)
+    fat_sectors = struct.unpack_from("<H", img, 22)[0]
+    root_off = (reserved + nfats * fat_sectors) * bps
+    data_off = root_off + root_entries * 32
+    for i in range(root_entries):
+        at = root_off + 32 * i
+        if img[at:at + 11] == b"AUTOEXECBAT":
+            cluster, size = struct.unpack_from("<HI", img, at + 26)
+            break
+    else:
+        sys.exit("AUTOEXEC.BAT not found on the floppy")
+    # Room: the file's cluster chain length. Keep it simple: one cluster.
+    room = spc * bps
+    new = AUTOEXEC.encode("ascii")
+    if len(new) > room:
+        sys.exit(f"new AUTOEXEC.BAT is {len(new)} bytes, only {room} fit")
+    off = data_off + (cluster - 2) * room
+    img[off:off + room] = new.ljust(room, b"\0")
+    struct.pack_into("<I", img, at + 28, len(new))
+    return bytes(img)
+
+
+def doom_zip() -> bytes:
+    for f in (DOOM_DIR / "DOOM.EXE", DOOM_DIR / "DOOM1.WAD"):
+        if not f.exists():
+            sys.exit(f"{f.relative_to(ROOT)} missing: unpack shareware DOOM 1.9 there (see NOTES.md)")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(DOOM_DIR / "DOOM.EXE", "DOOM.EXE")
+        z.write(DOOM_DIR / "DOOM1.WAD", "DOOM1.WAD")
+        z.writestr("DEFAULT.CFG", DOOM_CFG)
+        z.writestr("PTDOS.BAT", "@echo off\r\ndoom\r\n")
+    return buf.getvalue()
+
+
+def make_icon() -> Image.Image:
+    """A DOS prompt, 100 px like the other app icons."""
+    icon = Image.new("RGBA", (100, 100), (0, 0, 170, 255))
+    draw = ImageDraw.Draw(icon)
+    try:
+        font = ImageFont.truetype("consolab.ttf", 26)
+    except OSError:
+        font = ImageFont.load_default()
+    draw.text((50, 50), "C:\\>_", font=font, fill=(230, 230, 230, 255), anchor="mm")
+    return icon
+
+
+def embed(files: dict[str, bytes]) -> str:
+    lines = ["window.V86DATA=window.V86DATA||{};"]
+    for name, data in files.items():
+        lines.append("V86DATA[%s]=\"%s\";" % (json.dumps(name), base64.b64encode(data).decode("ascii")))
+    return "\n".join(lines) + "\n"
+
+
+def write(name: str, text: str) -> None:
+    (OUT / name).write_text(text, encoding="ascii", newline="\n")
+
+
+def main() -> int:
+    for f in (V86 / "libv86.js", V86 / "v86.wasm", V86 / "seabios.bin", V86 / "vgabios.bin", FLOPPY):
+        if not f.exists():
+            sys.exit(f"{f.relative_to(ROOT)} missing (see the docstring)")
+    game = open(sys.argv[1], "rb").read() if len(sys.argv) > 1 else doom_zip()
+    if "PTDOS.BAT" not in [n.upper() for n in zipfile.ZipFile(io.BytesIO(game)).namelist()]:
+        sys.exit("the game's zip has no PTDOS.BAT at its top level")
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    write("index.html", PAGE)
+    write("ptdos.js", (ROOT / "web" / "v86-dos.js").read_text(encoding="ascii"))
+    write("libv86.js", (V86 / "libv86.js").read_text(encoding="ascii"))
+    write("v86data.js", embed({
+        "bios": (V86 / "seabios.bin").read_bytes(),
+        "vgabios": (V86 / "vgabios.bin").read_bytes(),
+        "fda": patch_autoexec(FLOPPY.read_bytes()),
+        "wasm": (V86 / "v86.wasm").read_bytes(),
+    }))
+    write("game.js", embed({"game": game}))
+    make_icon().save(OUT / "icon.png")
+
+    # Packet Tracer wants forward slashes, also on Windows.
+    installer = (ROOT / "pt" / "install-v86-app.js").read_text(encoding="utf-8")
+    (DIST / "install-v86-app.js").write_text(installer.replace("__PTDOOM_DIST__", DIST.as_posix()),
+                                             encoding="utf-8", newline="\n")
+
+    outputs = [OUT / f for f in ("index.html", "ptdos.js", "libv86.js", "v86data.js", "game.js", "icon.png")]
+    for f in outputs + [DIST / "install-v86-app.js"]:
+        print(f"ok: {f.relative_to(ROOT)} ({f.stat().st_size:,} bytes)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
