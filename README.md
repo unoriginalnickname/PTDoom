@@ -31,7 +31,9 @@ A desktop app's page is loaded as a `data:` URL capped at 2 MB, but Packet Trace
 
 ### From the Command Prompt
 
-Run `dist/doom-command.js` once per Packet Tracer session. Then on any PC or server: **Desktop → Command Prompt**, type `doom`, press Enter. The prompt still says "Invalid Command."; the window opens anyway.
+The app also adds a `doom` command to the PC's Command Prompt. It prints a banner and points to the Desktop, since nothing in a Desktop app's APIs can open its own window.
+
+To have `doom` open the game too, run `dist/doom-command.js` once per Packet Tracer session. It watches every PC's and server's Command Prompt and opens the game in a separate Packet Tracer window. On a PC without the app, the prompt answers "Invalid Command." but the window still opens.
 
 Controls: arrows move, Ctrl fires, Space opens doors, Enter/Esc for menus. Click the window first to give it the keyboard.
 

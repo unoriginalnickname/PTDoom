@@ -31,16 +31,42 @@
     "<html>index.html</html>",
     "<icon>icon.png</icon>",
     "</gui>",
+    "<cli>",
+    "<command>",
+    "<name>doom</name>",
+    "<description>Play DOOM.</description>",
+    "</command>",
+    "</cli>",
     "</application>",
     ""].join("\n");
   // Python, not JavaScript: a main.js failed with "undefined is not a
-  // function"; this is the built-in MQTT Client's pattern.
+  // function"; this is the built-in MQTT Client's pattern. Nothing in the
+  // app's APIs opens its own window, so the `doom` command points to the
+  // Desktop; doom-command.js, if running, also opens the game window.
   var MAIN_PY = [
     "from gui import *",
+    "from cli import *",
     "from time import *",
+    "",
+    "BANNER = [",
+    "    \" ____   ___   ___  __  __\",",
+    "    \"|  _ \\\\ / _ \\\\ / _ \\\\|  \\\\/  |\",",
+    "    \"| | | | | | | | | | |\\\\/| |\",",
+    "    \"| |_| | |_| | |_| | |  | |\",",
+    "    \"|____/ \\\\___/ \\\\___/|_|  |_|\",",
+    "]",
+    "",
+    "def cliEvent(type, args):",
+    "    if type == \"invoked\":",
+    "        for line in BANNER:",
+    "            print(line)",
+    "        print(\"\")",
+    "        print(\"Play it from this PC's Desktop tab: Desktop > DOOM.\")",
+    "        CLI.exit()",
     "",
     "def main():",
     "    GUI.setup()",
+    "    CLI.setup()",
     "    while True:",
     "        delay(60000)",
     "",
@@ -70,7 +96,11 @@
       if (dir.fileExist(name)) dir.removeFile(name, true);
       dir.addTextFile(name, files[name], true);
     }
-    if (!device.getUserDesktopAppById(ID)) device.addUserDesktopApp(FOLDER);
+    // The manifest is read when the app is registered, so register afresh:
+    // otherwise a reinstall keeps the old Command Prompt commands.
+    // Unregistering leaves the folder alone.
+    if (device.getUserDesktopAppById(ID)) device.removeUserDesktopApp(FOLDER);
+    device.addUserDesktopApp(FOLDER);
   }
 
   var net = ipc.network();
