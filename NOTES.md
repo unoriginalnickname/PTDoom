@@ -46,10 +46,22 @@ Session 2 findings (2026-09-29 evening):
 
 QtWebEngine 6.8.7 / Chrome 130. WebAssembly, **WebGL 1 and 2 on the real GPU** (ANGLE, Direct3D 11), Web Audio, pointer lock, fullscreen, gamepad, workers, IndexedDB, localStorage, 1 GB WebAssembly memory. **No SharedArrayBuffer** (not cross-origin isolated), so no threaded WebAssembly builds. WebGPU exists but gives no adapter. A `fetch` to a CDN from a `file://` page failed, so bundle everything locally.
 
+## Installer .pkt (2026-09-29)
+
+- The engine is built without the WAD (`dist/engine.html`, 1.7 MB). `web/shell.html`'s `preRun` writes `window.DOOM_WAD = {name, data: base64}` into the file system (`-sFORCE_FILESYSTEM=1`, `EXPORTED_RUNTIME_METHODS=["FS"]`); the engine finds the WAD by name.
+- **Desktop apps survive saving a `.pkt`** (tested: saved, reopened from disk, files and `doom` command intact; the .pkt compresses to about 3 MB with the WAD).
+- `NetworkFile.addScript` / `addScriptFile` are the old activity scripts: saved in the file but not run on open. The File Script Module (`main()` on open, `cleanUp()` on close) is edited only in **Extensions → Scripting → Edit File Script Module**.
+- **Privileges tick boxes were lost when saving through the bridge** (`fileSaveAsNoPrompt`); saving with Packet Tracer's own File → Save kept them. Without them: "does not have the necessary privilege for IPC call 'network'".
+- A Custom Interface opens with `webViewManager.createWebView(title, "file-sm:installer.html", w, h)`. Web views make IPC calls with `obj.ipcCallArgsAsync(name, args, callback)` (same objects as the script engine), so the page does the whole install; a 5.6 MB `addTextFile` from the page worked.
+- The script engine has no `atob` (it does have `Uint8Array`); Chromium in the page does, plus canvas for the PNG icon.
+- The debug window also shows `ReferenceError: EVENT_MANAGER is not defined` several times: harmless so far, probably Packet Tracer expecting its template scripts.
+- `changeNoteText` made a canvas note invisible (and `setCanvasItemX/Y` didn't move it); removing and re-adding the note worked.
+- Tested end to end by hand: open installer, allow, choose doom1.wad, DOOM plays with the Doomguy icon.
+
 ## To do
 
 Done: `doom` command tested by hand (prints the banner; with `doom-command.js` running, the game window opens too, confirmed). Pushed to https://github.com/unoriginalnickname/PTDoom (public, no-reply author email).
 
-1. Check whether the app survives saving and reopening a `.pkt`.
-2. Other games: a DOS emulator in the browser (js-dos / em-dosbox) for old DOS games, then maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
-3. Clean up the test canvas (GamingPC, TestPC, TestLaptop, CmdPC).
+1. Check that the Install DOOM window reaches "Installed on DOOM-PC" (data arrived; the message wasn't confirmed).
+2. Try other WADs (doom.wad, doom2.wad, Freedoom).
+3. Other games: a DOS emulator in the browser (js-dos / em-dosbox) for old DOS games, then maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.

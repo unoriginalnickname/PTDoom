@@ -5,6 +5,7 @@ Output:
   dist/app/doom.js      engine and wasm, no game data
   dist/app/wad.js       the WAD, as window.DOOM_WAD (see web/shell.html)
   dist/app/icon.png     Doomguy's status-bar face, from the WAD
+  dist/app/icon-generic.png  plain icon for the installer .pkt
   dist/doom.html        engine and WAD in one page, for doom-command.js or a browser
   dist/install-app.js   pt/install-app.js with this repo's path filled in
   dist/doom-command.js  pt/doom-command.js with this repo's path filled in
@@ -22,7 +23,7 @@ import re
 import struct
 import sys
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from paths import APP, DIST, DOOM_HTML, ENGINE_HTML, ROOT, WAD
 
@@ -89,6 +90,18 @@ def make_icon(wad: bytes) -> Image.Image:
     return icon
 
 
+def make_generic_icon() -> Image.Image:
+    """An icon with none of id's artwork, for the installer .pkt."""
+    icon = Image.new("RGBA", (ICON_SIZE, ICON_SIZE), (40, 8, 8, 255))
+    draw = ImageDraw.Draw(icon)
+    try:
+        font = ImageFont.truetype("arialbd.ttf", 28)
+    except OSError:
+        font = ImageFont.load_default()
+    draw.text((ICON_SIZE // 2, ICON_SIZE // 2), "DOOM", font=font, fill=(200, 30, 30, 255), anchor="mm")
+    return icon
+
+
 def write(path, text: str) -> None:
     path.write_text(text, encoding="ascii", newline="\n")
 
@@ -112,6 +125,7 @@ def main() -> int:
     write(APP / "doom.js", engine)
     write(APP / "wad.js", wad_js)
     make_icon(wad).save(APP / "icon.png")
+    make_generic_icon().save(APP / "icon-generic.png")
 
     # One page with everything inline, for the URL-loaded window.
     write(DOOM_HTML, before + "<script>" + wad_js + "</script><script id=mainScript>" + engine + "</script>" + after)
@@ -122,7 +136,7 @@ def main() -> int:
         text = (ROOT / "pt" / name).read_text(encoding="utf-8")
         (DIST / name).write_text(text.replace(DIST_PLACEHOLDER, dist), encoding="utf-8", newline="\n")
 
-    outputs = [APP / f for f in ("index.html", "doom.js", "wad.js", "icon.png")] + [DOOM_HTML] + [DIST / n for n in PT_SCRIPTS]
+    outputs = [APP / f for f in ("index.html", "doom.js", "wad.js", "icon.png", "icon-generic.png")] + [DOOM_HTML] + [DIST / n for n in PT_SCRIPTS]
     for f in outputs:
         print(f"ok: {f.relative_to(ROOT)} ({f.stat().st_size:,} bytes)")
     return 0

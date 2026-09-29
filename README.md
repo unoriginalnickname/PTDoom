@@ -1,51 +1,54 @@
 # PTDoom
 
-Doom running inside Cisco Packet Tracer 9.0.1, as an app on a simulated PC's Desktop, or in its own window from the PC's Command Prompt.
+Doom running inside Cisco Packet Tracer 9.0.1, as an app on a simulated PC's Desktop.
 
-It works because Packet Tracer's extension windows are a full Chromium (QtWebEngine 6.8.7, Chrome 130) with WebAssembly. The game is [doomgeneric](https://github.com/ozkl/doomgeneric), a portable build of Chocolate Doom, compiled to WebAssembly with Emscripten.
+It works because Packet Tracer's Desktop apps and extension windows are web pages in a full Chromium (QtWebEngine 6.8.7, Chrome 130) with WebAssembly. The game is [doomgeneric](https://github.com/ozkl/doomgeneric), a portable build of Chocolate Doom, compiled to WebAssembly with Emscripten.
+
+## Play
+
+You need Packet Tracer 9.0.1 and a DOOM game file (a WAD). The shareware episode's **doom1.wad** is free to share and works. The installer also accepts `doom.wad`, `doom2.wad` and Freedoom's WADs, but only doom1.wad has been tested. This repo doesn't include one.
+
+1. Download [PTDoom-installer.pkt](PTDoom-installer.pkt) and open it in Packet Tracer.
+2. Packet Tracer asks whether to allow the file's script. Allow it, and the **Install DOOM** window opens.
+3. Choose your WAD.
+4. Save the file under a new name (**File → Save As**): that copy has the game in it.
+5. Click **DOOM-PC → Desktop → DOOM**. Click the game to give it the keyboard.
+
+Controls: arrows move, Ctrl fires, Space opens doors, Enter/Esc for menus.
+
+The app also adds a `doom` command to DOOM-PC's Command Prompt. It prints a banner and points to the Desktop: nothing in a Desktop app's APIs can open its own window.
+
+## How it works
+
+A Desktop app is a project folder on the PC with an `app_manifest.xml`, a `main.py`, and page files prefixed `[gui]`. The page itself is loaded as a `data:` URL capped at 2 MB, but Packet Tracer serves the app's other `[gui]` files separately, so the engine goes in `doom.js` (1.7 MB) and the game data in `wad.js`.
+
+The installer `.pkt` ships the engine without game data. Its File Script Module (`pt/installer/`) opens a page that reads the WAD you choose, checks it, draws the Desktop icon from Doomguy's face in it, and writes both into the app. `NOTES.md` has the details and what was learned on the way.
 
 ## Build
 
-Needs Python and the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html). No `make`.
+For changing the engine or the installer. Needs Python with Pillow and the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html). No `make`.
 
 ```sh
 git clone --depth 1 https://github.com/ozkl/doomgeneric.git vendor/doomgeneric
-python tools/fetch_wad.py   # shareware DOOM1.WAD from Debian's package, SHA-1 checked
+python tools/fetch_wad.py   # shareware doom1.wad from Debian's package, SHA-1 checked
 python tools/build.py       # run with emcc on PATH and EM_CONFIG set
-python tools/make_app.py    # needs Pillow (pip install pillow)
+python tools/make_app.py
 ```
 
-`build.py` makes `dist/doom.html`, one self-contained file (engine, wasm and WAD), about 7 MB. It also runs in an ordinary browser.
+`build.py` makes `dist/engine.html`, the engine without game data. `make_app.py` makes the app's files in `dist/app/`, `dist/doom.html` (engine and WAD in one page, which also runs in an ordinary browser), and two Packet Tracer scripts in `dist/` with this repo's path filled in. Both scripts run in Packet Tracer's Script Engine, for example with [packet-tracer-mcp](https://github.com/jcorderop02/packet-tracer-mcp)'s `pt_send_raw`:
 
-`make_app.py` splits that into the Desktop app's files in `dist/app/`, makes its icon (Doomguy's face, from the WAD), and writes the two Packet Tracer scripts below into `dist/` with this repo's path filled in.
+- `dist/install-app.js` installs DOOM, WAD included, on every PC and laptop on the canvas (or those listed in `DEVICES`). Running it again updates them.
+- `dist/doom-command.js` makes typing `doom` in any PC's Command Prompt open the game in a separate window. It runs until Packet Tracer closes.
 
-Both scripts run in Packet Tracer's Script Engine, for example with [packet-tracer-mcp](https://github.com/jcorderop02/packet-tracer-mcp)'s `pt_send_raw`.
-
-## Run in Packet Tracer
-
-### As a Desktop app
-
-Run `dist/install-app.js`. It installs DOOM on every PC and laptop on the canvas; list names in `DEVICES` at its top to pick some. Then open a PC: **Desktop → DOOM**. Running it again updates the installed copies.
-
-A desktop app's page is loaded as a `data:` URL capped at 2 MB, but Packet Tracer serves the app's other `[gui]` files separately, so the 7 MB engine goes in its own `doom.js`. `NOTES.md` has the details.
-
-### From the Command Prompt
-
-The app also adds a `doom` command to the PC's Command Prompt. It prints a banner and points to the Desktop, since nothing in a Desktop app's APIs can open its own window.
-
-To have `doom` open the game too, run `dist/doom-command.js` once per Packet Tracer session. It watches every PC's and server's Command Prompt and opens the game in a separate Packet Tracer window. On a PC without the app, the prompt answers "Invalid Command." but the window still opens.
-
-Controls: arrows move, Ctrl fires, Space opens doors, Enter/Esc for menus. Click the window first to give it the keyboard.
+To remake the installer: install the app without `[gui]wad.js` and with `dist/app/icon-generic.png` as the icon, then in **Extensions → Scripting → Edit File Script Module** import `pt/installer/ptdoom.js` (Script Engine) and `pt/installer/installer.html` (Custom Interfaces), and tick Get Network Info, Change Network Info, Change User Interface and Miscellaneous UI under General → Security. Save with Packet Tracer's own **File → Save**.
 
 ## Known issues
 
 - No music: doomgeneric's MIDI playback needs sound-bank files that aren't included. Sound effects work.
 - Audio can glitch while loading.
-- The installed app reads nothing from disk afterwards, but installing needs the repo on the same machine as Packet Tracer.
 - Opening an app window can disconnect packet-tracer-mcp's bridge; reopen **Extensions → MCP Bridge**.
-- Not yet tested: whether the app survives saving and reopening a `.pkt`.
 
 ## Licences
 
-- doomgeneric / Chocolate Doom: GPL-2.0.
-- DOOM1.WAD: id Software's shareware licence. Not included in this repo; `tools/fetch_wad.py` downloads it.
+- doomgeneric / Chocolate Doom, and so the engine in `PTDoom-installer.pkt`: GPL-2.0.
+- DOOM WADs: id Software's. None is included here; `tools/fetch_wad.py` downloads the shareware one.

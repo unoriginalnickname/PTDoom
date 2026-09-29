@@ -30,7 +30,7 @@
     // engine finds the file by name in its working directory.
     preRun: [function () {
       var wad = window.DOOM_WAD;
-      if (!wad) throw new Error('no game data: wad.js is missing');
+      if (!wad) throw new Error('no game data installed yet: choose a WAD in the Install DOOM window');
       var bin = atob(wad.data), bytes = new Uint8Array(bin.length);
       for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       Module.FS.writeFile('/' + wad.name, bytes);

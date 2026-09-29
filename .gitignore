@@ -3,3 +3,6 @@ build/
 dist/
 vendor/
 __pycache__/
+# Packet Tracer files, except the installer: a saved, installed copy holds the WAD.
+*.pkt
+!PTDoom-installer.pkt
