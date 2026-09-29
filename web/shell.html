@@ -25,6 +25,16 @@
     printErr: function (t) { console.error(t); },
     setStatus: function (t) { if (t) statusEl.textContent = t; },
     onRuntimeInitialized: function () { statusEl.style.display = 'none'; canvas.focus(); },
+    // The engine has no game data built in: wad.js (or an inline script)
+    // sets window.DOOM_WAD = {name: "doom1.wad", data: "<base64>"}, and the
+    // engine finds the file by name in its working directory.
+    preRun: [function () {
+      var wad = window.DOOM_WAD;
+      if (!wad) throw new Error('no game data: wad.js is missing');
+      var bin = atob(wad.data), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      Module.FS.writeFile('/' + wad.name, bytes);
+    }],
     // Quit from the menu: leave a marker in the URL. pt/doom-command.js
     // polls the window's URL and closes the window when it sees it.
     onExit: gameOver,

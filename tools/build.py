@@ -1,15 +1,16 @@
 """Build doomgeneric for the browser with Emscripten, no make needed.
 
-Output: dist/doom.html, one self-contained file (engine, wasm and WAD
-embedded), so Packet Tracer's web view can load it from disk with setUrl.
+Output: dist/engine.html, the engine and wasm in one page, without game data:
+the page loads the WAD from window.DOOM_WAD (see web/shell.html), so the
+engine can be shared without the WAD. tools/make_app.py adds the WAD.
 
-Run from an Emscripten environment (emsdk_env), after tools/fetch_wad.py.
+Run from an Emscripten environment (emsdk_env).
 """
 import shutil
 import subprocess
 import sys
 
-from paths import DOOM_HTML as OUT, ROOT, WAD
+from paths import ENGINE_HTML as OUT, ROOT
 
 SRC = ROOT / "vendor" / "doomgeneric" / "doomgeneric"
 OBJ = ROOT / "build"
@@ -32,7 +33,8 @@ LDFLAGS = ["-sALLOW_MEMORY_GROWTH=1", "-sSINGLE_FILE=1", "-sEXIT_RUNTIME=1",
            # first NUL, so the page must be plain ASCII to copy onto a PC.
            "-sSINGLE_FILE_BINARY_ENCODE=0",
            "-sSDL2_MIXER_FORMATS=[\"mid\"]",
-           f"--embed-file={WAD}@doom1.wad",
+           # The WAD is written into the file system at startup, not embedded.
+           "-sFORCE_FILESYSTEM=1", "-sEXPORTED_RUNTIME_METHODS=[\"FS\"]",
            f"--shell-file={ROOT / 'web' / 'shell.html'}"]
 
 
@@ -44,8 +46,6 @@ def emcc() -> str:
 
 
 def main() -> int:
-    if not WAD.exists():
-        sys.exit("wad/doom1.wad missing: run tools/fetch_wad.py first")
     cc = emcc()
     OBJ.mkdir(exist_ok=True)
     OUT.parent.mkdir(exist_ok=True)

@@ -8,9 +8,10 @@
 // How it works: a desktop app is a project folder on the device's Dev: file
 // system. Files prefixed [gui] belong to the page. The page itself is loaded
 // as a data: URL capped at 2 MB, but Packet Tracer rewrites references to the
-// other [gui] files into user-app: URLs with no such cap, so the 7 MB engine
-// lives in [gui]doom.js. Packet Tracer keeps binary files such as the icon as
-// base64 text, which is what getFileBinaryContents returns.
+// other [gui] files into user-app: URLs with no such cap, so the engine lives
+// in [gui]doom.js and the game data in [gui]wad.js. Packet Tracer keeps
+// binary files such as the icon as base64 text, which is what
+// getFileBinaryContents returns.
 (function () {
   // Device names to install on; empty means every PC and laptop.
   var DEVICES = [];
@@ -80,6 +81,7 @@
     "main.py": MAIN_PY,
     "[gui]index.html": sfm.getFileContents(APP_DIR + "index.html"),
     "[gui]doom.js": sfm.getFileContents(APP_DIR + "doom.js"),
+    "[gui]wad.js": sfm.getFileContents(APP_DIR + "wad.js"),
     "[gui]icon.png": sfm.getFileBinaryContents(APP_DIR + "icon.png")
   };
   for (var f in files) {
