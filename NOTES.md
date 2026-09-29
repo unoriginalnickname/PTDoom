@@ -48,7 +48,7 @@ QtWebEngine 6.8.7 / Chrome 130. WebAssembly, **WebGL 1 and 2 on the real GPU** (
 
 ## To do
 
-Done: `doom` command tested by hand (prints the banner). Not yet confirmed: that `doom-command.js` opens the game window when `doom` is now a real command. Pushed to https://github.com/unoriginalnickname/PTDoom (public, no-reply author email).
+Done: `doom` command tested by hand (prints the banner; with `doom-command.js` running, the game window opens too, confirmed). Pushed to https://github.com/unoriginalnickname/PTDoom (public, no-reply author email).
 
 1. Check whether the app survives saving and reopening a `.pkt`.
 2. Other games: a DOS emulator in the browser (js-dos / em-dosbox) for old DOS games, then maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
