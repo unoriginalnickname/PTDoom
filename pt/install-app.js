@@ -56,7 +56,8 @@
   if (!page || !js || !icon) return "missing files in " + APP_DIR;
 
   var root = device.getProcess("FileManager").getFileSystem("Dev:");
-  root.addDirectory(NAME, true);
+  // addDirectory throws "File exists" on a reinstall.
+  if (!root.fileExist(NAME)) root.addDirectory(NAME, true);
   var dir = root.getFile(NAME);
   // addTextFile won't replace a file, so clear old copies first.
   ["app_manifest.xml", "main.py", "[gui]index.html", "[gui]doom.js", "[gui]icon.png"].forEach(function (f) {
