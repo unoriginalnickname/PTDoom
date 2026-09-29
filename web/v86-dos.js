@@ -272,11 +272,17 @@
   // --- boot ------------------------------------------------------------------
 
   async function start() {
-    var files = await unzip(take("game"));
-    var disk = fat16Disk(files);
-    log(files.filter(function (f) { return !f.dir; }).length + " files, " + (disk.length / 1048576).toFixed(0) + " MB disk");
+    // No game installed yet ([gui]game.js missing): FreeDOS alone, no C:.
+    var disk = null;
+    if (V86DATA.game) {
+      var files = await unzip(take("game"));
+      disk = fat16Disk(files);
+      log(files.filter(function (f) { return !f.dir; }).length + " files, " + (disk.length / 1048576).toFixed(0) + " MB disk");
+    } else {
+      log("no game installed");
+    }
     var wasm = take("wasm");
-    var emu = new V86({
+    var options = {
       wasm_fn: function (imports) {
         return WebAssembly.instantiate(wasm, imports).then(function (r) { return r.instance.exports; });
       },
@@ -286,10 +292,11 @@
       bios: { buffer: take("bios").buffer },
       vga_bios: { buffer: take("vgabios").buffer },
       fda: { buffer: take("fda").buffer },
-      hda: { buffer: disk.buffer },
       boot_order: 0x321,
       autostart: true
-    });
+    };
+    if (disk) options.hda = { buffer: disk.buffer };
+    var emu = new V86(options);
     window.emu = emu;
     var opl = take("opl");
     emu.add_listener("emulator-loaded", function () {

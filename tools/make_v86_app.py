@@ -86,29 +86,105 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden}
 """
 
 
-def patch_autoexec(img: bytes) -> bytes:
-    """Replace AUTOEXEC.BAT on a FAT12 floppy; the new file must fit its old clusters."""
-    img = bytearray(img)
-    bps, spc, reserved, nfats, root_entries = struct.unpack_from("<HBHBH", img, 11)
-    fat_sectors = struct.unpack_from("<H", img, 22)[0]
-    root_off = (reserved + nfats * fat_sectors) * bps
-    data_off = root_off + root_entries * 32
-    for i in range(root_entries):
-        at = root_off + 32 * i
-        if img[at:at + 11] == b"AUTOEXECBAT":
-            cluster, size = struct.unpack_from("<HI", img, at + 26)
-            break
-    else:
-        sys.exit("AUTOEXEC.BAT not found on the floppy")
-    # Room: the file's cluster chain length. Keep it simple: one cluster.
-    room = spc * bps
-    new = AUTOEXEC.encode("ascii")
-    if len(new) > room:
-        sys.exit(f"new AUTOEXEC.BAT is {len(new)} bytes, only {room} fit")
-    off = data_off + (cluster - 2) * room
-    img[off:off + room] = new.ljust(room, b"\0")
-    struct.pack_into("<I", img, at + 28, len(new))
-    return bytes(img)
+# What stays on the copy.sh floppy: FreeDOS itself. It also carries games,
+# demos and tools (vim, nasm, ROGUE...) whose licences aren't clear, and the
+# app is published in a .pkt.
+KEEP = {b"KERNEL  SYS", b"COMMAND COM", b"AUTOEXECBAT", b"CONFIG  SYS", b"README     ", b"FDOS       "}
+
+
+class Floppy:
+    """Just enough FAT12 to edit the root directory of a boot floppy in place."""
+
+    def __init__(self, img: bytes):
+        self.img = bytearray(img)
+        bps, spc, reserved, nfats, self.root_entries = struct.unpack_from("<HBHBH", img, 11)
+        fat_sectors = struct.unpack_from("<H", img, 22)[0]
+        self.cluster_bytes = spc * bps
+        self.fats = [(reserved + k * fat_sectors) * bps for k in range(nfats)]
+        self.root_off = (reserved + nfats * fat_sectors) * bps
+        self.data_off = self.root_off + self.root_entries * 32
+
+    def root(self):
+        """(offset, 11-byte name) of each live root directory entry."""
+        for i in range(self.root_entries):
+            at = self.root_off + 32 * i
+            if self.img[at] == 0:
+                break
+            if self.img[at] != 0xE5 and self.img[at + 11] != 0x0F:  # skip deleted and long-name parts
+                yield at, bytes(self.img[at:at + 11])
+
+    def fat_get(self, n: int) -> int:
+        v = struct.unpack_from("<H", self.img, self.fats[0] + n * 3 // 2)[0]
+        return v >> 4 if n & 1 else v & 0xFFF
+
+    def fat_set(self, n: int, value: int) -> None:
+        for fat in self.fats:
+            at = fat + n * 3 // 2
+            v = struct.unpack_from("<H", self.img, at)[0]
+            v = (v & 0x000F) | (value << 4) if n & 1 else (v & 0xF000) | value
+            struct.pack_into("<H", self.img, at, v)
+
+    def chain(self, first: int):
+        c = first
+        while 2 <= c < 0xFF8:
+            yield c
+            c = self.fat_get(c)
+
+    def free(self, first: int, is_dir: bool) -> None:
+        """Free a cluster chain, and for a folder everything inside it first."""
+        if is_dir:
+            for c in list(self.chain(first)):
+                base = self.data_off + (c - 2) * self.cluster_bytes
+                for at in range(base, base + self.cluster_bytes, 32):
+                    if self.img[at] in (0, 0xE5) or self.img[at] == 0x2E or self.img[at + 11] == 0x0F:
+                        continue
+                    sub = struct.unpack_from("<H", self.img, at + 26)[0]
+                    self.free(sub, bool(self.img[at + 11] & 0x10))
+        for c in list(self.chain(first)):
+            self.fat_set(c, 0)
+
+    def strip(self, keep: set) -> list:
+        removed = []
+        for at, name in list(self.root()):
+            if name in keep or self.img[at + 11] & 0x08:  # keep the volume label
+                continue
+            first = struct.unpack_from("<H", self.img, at + 26)[0]
+            self.free(first, bool(self.img[at + 11] & 0x10))
+            self.img[at] = 0xE5
+            # Its long-name entries sit just before it; orphans upset checkers.
+            lfn = at - 32
+            while lfn >= self.root_off and self.img[lfn + 11] == 0x0F and self.img[lfn] != 0xE5:
+                self.img[lfn] = 0xE5
+                lfn -= 32
+            removed.append(name.decode("ascii").strip())
+        return removed
+
+    def replace(self, name11: bytes, data: bytes) -> None:
+        """Replace a root file's contents; the new data must fit its first cluster."""
+        for at, name in self.root():
+            if name == name11:
+                break
+        else:
+            sys.exit(f"{name11!r} not found on the floppy")
+        if len(data) > self.cluster_bytes:
+            sys.exit(f"new {name11!r} is {len(data)} bytes, only {self.cluster_bytes} fit")
+        first = struct.unpack_from("<H", self.img, at + 26)[0]
+        rest = list(self.chain(first))[1:]
+        if rest:
+            self.fat_set(first, 0xFFF)
+            for c in rest:
+                self.fat_set(c, 0)
+        off = self.data_off + (first - 2) * self.cluster_bytes
+        self.img[off:off + self.cluster_bytes] = data.ljust(self.cluster_bytes, b"\0")
+        struct.pack_into("<I", self.img, at + 28, len(data))
+
+
+def make_floppy(img: bytes) -> bytes:
+    fd = Floppy(img)
+    removed = fd.strip(KEEP)
+    fd.replace(b"AUTOEXECBAT", AUTOEXEC.encode("ascii"))
+    print(f"floppy: removed {', '.join(removed)}")
+    return bytes(fd.img)
 
 
 def doom_zip() -> bytes:
@@ -162,7 +238,7 @@ def main() -> int:
     write("v86data.js", embed({
         "bios": (V86 / "seabios.bin").read_bytes(),
         "vgabios": (V86 / "vgabios.bin").read_bytes(),
-        "fda": patch_autoexec(FLOPPY.read_bytes()),
+        "fda": make_floppy(FLOPPY.read_bytes()),
         "wasm": (V86 / "v86.wasm").read_bytes(),
         "opl": OPL.read_bytes(),
     }))
