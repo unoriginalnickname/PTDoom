@@ -4,18 +4,20 @@
 <meta charset="utf-8">
 <title>Install DOOM</title>
 <style>
-  body { margin: 20px; background: #1b1b1b; color: #ddd; font: 14px sans-serif; }
+  html, body { background: #1b1b1b; }
+  body { margin: 20px; color: #ddd; font: 14px sans-serif; }
   h1 { margin: 0 0 12px; color: #c33; font-size: 22px; }
-  code, b { color: #fff; }
+  /* Not white: readable even if Packet Tracer draws the page on white. */
+  code, b { color: #e8a33d; font-weight: bold; }
   #log { margin-top: 14px; color: #9c9; font: 13px monospace; white-space: pre-wrap; }
   #log .err { color: #f66; }
 </style>
 </head>
 <body>
 <h1>Install DOOM</h1>
-<p>DOOM-PC has the DOOM engine but no game data. Choose a DOOM WAD file:
-the free shareware <b>doom1.wad</b> works, and so do <code>doom.wad</code>,
-<code>doom2.wad</code> and Freedoom's WADs.</p>
+<p>DOOM-PC has the DOOM engine but no game data. Choose a DOOM WAD file,
+for example the free shareware <b>doom1.wad</b>. <code>doom.wad</code>,
+<code>doom2.wad</code> and Freedoom's WADs are accepted too.</p>
 <input type="file" id="pick" accept=".wad,.WAD">
 <div id="log"></div>
 <script>

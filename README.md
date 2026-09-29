@@ -12,7 +12,8 @@ You need Packet Tracer 9.0.1 and a DOOM game file (a WAD).
 
 - Download it from the link on Doom Wiki's [DOOM1.WAD page](https://doomwiki.org/wiki/DOOM1.WAD). The right file (v1.9) is 4,196,020 bytes, SHA-1 `5b2e249b9c5133ec987b3ea77596381dc0d6bc1d`.
 - With Python: `python tools/fetch_wad.py` in a copy of this repo. It downloads doom1.wad from Debian's `doom-wad-shareware` package, checks it, and saves it as `wad/doom1.wad`.
-- Or use a copy you already have. The installer also accepts `doom.wad` (for example from DOOM on Steam or GOG), `doom2.wad` and Freedoom's WADs, but only doom1.wad has been tested.
+- Or use a copy you already have: the installer also accepts `doom.wad` (for example from DOOM on Steam or GOG) and `doom2.wad` (untested).
+- Or play [Freedoom](https://freedoom.github.io/) instead: a free, complete replacement for DOOM's data by volunteers, with its own art and levels. `freedoom1.wad` from its [download](https://github.com/freedoom/freedoom/releases) works (tested with v0.13.0).
 
 1. Download [PTDoom-installer.pkt](PTDoom-installer.pkt) and open it in Packet Tracer.
 2. Packet Tracer asks whether to allow the file's script. Allow it, and the **Install DOOM** window opens.
@@ -57,4 +58,5 @@ To remake the installer: install the app without `[gui]wad.js` and with `dist/ap
 ## Licences
 
 - doomgeneric / Chocolate Doom, and so the engine in `PTDoom-installer.pkt`: GPL-2.0.
-- DOOM WADs: id Software's. None is included here; `tools/fetch_wad.py` downloads the shareware one.
+- DOOM's own WADs (`doom1.wad`, `doom.wad`, `doom2.wad`): id Software's. None is included here; `tools/fetch_wad.py` downloads the shareware one.
+- Freedoom's WADs: free, under a BSD licence (not included either).

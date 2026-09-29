@@ -56,7 +56,8 @@ QtWebEngine 6.8.7 / Chrome 130. WebAssembly, **WebGL 1 and 2 on the real GPU** (
 - The script engine has no `atob` (it does have `Uint8Array`); Chromium in the page does, plus canvas for the PNG icon.
 - The debug window also shows `ReferenceError: EVENT_MANAGER is not defined` several times: harmless so far, probably Packet Tracer expecting its template scripts.
 - `changeNoteText` made a canvas note invisible (and `setCanvasItemX/Y` didn't move it); removing and re-adding the note worked.
-- Tested end to end by hand: open installer, allow, choose doom1.wad, the window reports "Installed on DOOM-PC", DOOM plays with the Doomguy icon. Other WADs are accepted but untested; not a priority.
+- Tested end to end by hand: open installer, allow, choose doom1.wad, the window reports "Installed on DOOM-PC", DOOM plays with the Doomguy icon. Freedoom 0.13.0's `freedoom1.wad` (28.8 MB, so a 38 MB `wad.js`) also installs and plays. doom.wad / doom2.wad untested.
+- The installer page's white emphasis text was invisible: Packet Tracer apparently draws the page on white; fixed colours.
 
 ## To do
 
