@@ -37,12 +37,19 @@ Session 2 findings (2026-09-29 evening):
 - **WORKS: DOOM plays inside the PC's Desktop window** after the `mainScript` fix. Icon: Doomguy's face from the WAD (`tools/make_icon.py`). Packet Tracer stores binary files as base64 text, so `addTextFile(name, getFileBinaryContents(path), true)` works; `addTextFile` won't overwrite, so `removeFile(name, true)` first.
 - `pt/install-app.js` collects the install steps; tested as a whole: fresh install, reinstall, and the default "every PC and laptop" (laptops report class `Pc` too).
 - Tidy-up: `tools/split_app.py` and `tools/make_icon.py` are now one `tools/make_app.py`, which also writes `dist/install-app.js` and `dist/doom-command.js` with `__PTDOOM_DIST__` replaced by the real path. Shared paths in `tools/paths.py`.
-- Still to do: a real `doom` command via the manifest's `<cli>`; check whether the app survives saving a `.pkt`.
+- `doom` command: `<cli><command><name>doom</name>` in the manifest plus `cliEvent` in `main.py` (prints a banner, points to the Desktop). Registered on all test PCs (`getCommandCount() == 1`). The manifest is only read at registration, so the installer unregisters and registers again; `removeUserDesktopApp` keeps the folder. No API opens a Desktop app's window, from Python or IPC.
 - **"Max number of apps running"**: apps with `<background>true</background>` keep running after their window closes. `device.stopProject(dir)` stops them without trouble when they're healthy. Don't mark test apps as background.
 - The bridge only takes a single expression: wrap code in `(function(){ ... })()`, no top-level `return`. File text is `file.getContent(true).text`.
 - **Don't use `device.runCodeInProject`.** It returned true but showed nothing, and afterwards the app froze: clicks drew nothing, probably because `main.py` was stuck. `stopProject` on that app then timed out and dropped the bridge.
 
-Next ideas, in order:
+## Packet Tracer's browser (probe, 2026-09-29)
 
-1. Small page plus `main.js` sending `doom.txt` in chunks through `GUI.update`, the page joining them and `document.write`-ing the game. Test the file read first with a small file, not the 7 MB one.
-2. Fallback: the Desktop app's page just asks for the separate URL-loaded window to open (for example through the watcher), so the icon works even if the game can't live inside the PC's window.
+QtWebEngine 6.8.7 / Chrome 130. WebAssembly, **WebGL 1 and 2 on the real GPU** (ANGLE, Direct3D 11), Web Audio, pointer lock, fullscreen, gamepad, workers, IndexedDB, localStorage, 1 GB WebAssembly memory. **No SharedArrayBuffer** (not cross-origin isolated), so no threaded WebAssembly builds. WebGPU exists but gives no adapter. A `fetch` to a CDN from a `file://` page failed, so bundle everything locally.
+
+## To do
+
+1. Test the `doom` command by typing it in a PC's Command Prompt (registered, not yet tried by hand).
+2. Push to GitHub: public repo, author email is already the no-reply address. Waiting on the name (`packet-tracer-doom` suggested).
+3. Check whether the app survives saving and reopening a `.pkt`.
+4. Other games: a DOS emulator in the browser (js-dos / em-dosbox) for old DOS games, then maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
+5. Clean up the test canvas (GamingPC, TestPC, TestLaptop, CmdPC).
