@@ -56,12 +56,10 @@ QtWebEngine 6.8.7 / Chrome 130. WebAssembly, **WebGL 1 and 2 on the real GPU** (
 - The script engine has no `atob` (it does have `Uint8Array`); Chromium in the page does, plus canvas for the PNG icon.
 - The debug window also shows `ReferenceError: EVENT_MANAGER is not defined` several times: harmless so far, probably Packet Tracer expecting its template scripts.
 - `changeNoteText` made a canvas note invisible (and `setCanvasItemX/Y` didn't move it); removing and re-adding the note worked.
-- Tested end to end by hand: open installer, allow, choose doom1.wad, DOOM plays with the Doomguy icon.
+- Tested end to end by hand: open installer, allow, choose doom1.wad, the window reports "Installed on DOOM-PC", DOOM plays with the Doomguy icon. Other WADs are accepted but untested; not a priority.
 
 ## To do
 
 Done: `doom` command tested by hand (prints the banner; with `doom-command.js` running, the game window opens too, confirmed). Pushed to https://github.com/unoriginalnickname/PTDoom (public, no-reply author email).
 
-1. Check that the Install DOOM window reaches "Installed on DOOM-PC" (data arrived; the message wasn't confirmed).
-2. Try other WADs (doom.wad, doom2.wad, Freedoom).
-3. Other games: a DOS emulator in the browser (js-dos / em-dosbox) for old DOS games, then maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
+1. Other games: a DOS emulator in the browser (js-dos / em-dosbox) for old DOS games, then maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
