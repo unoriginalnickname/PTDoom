@@ -48,8 +48,8 @@ QtWebEngine 6.8.7 / Chrome 130. WebAssembly, **WebGL 1 and 2 on the real GPU** (
 
 ## To do
 
-1. Test the `doom` command by typing it in a PC's Command Prompt (registered, not yet tried by hand).
-2. Push to GitHub: public repo, author email is already the no-reply address. Waiting on the name (`packet-tracer-doom` suggested).
-3. Check whether the app survives saving and reopening a `.pkt`.
-4. Other games: a DOS emulator in the browser (js-dos / em-dosbox) for old DOS games, then maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
-5. Clean up the test canvas (GamingPC, TestPC, TestLaptop, CmdPC).
+Done: `doom` command tested by hand (prints the banner; with `doom-command.js` running it also opens the game window). Pushed to https://github.com/unoriginalnickname/PTDoom (public, no-reply author email).
+
+1. Check whether the app survives saving and reopening a `.pkt`.
+2. Other games: a DOS emulator in the browser (js-dos / em-dosbox) for old DOS games, then maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
+3. Clean up the test canvas (GamingPC, TestPC, TestLaptop, CmdPC).
