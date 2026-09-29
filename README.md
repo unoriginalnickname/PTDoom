@@ -23,7 +23,7 @@ You need Packet Tracer 9.0.1 and a DOOM game file (a WAD).
 
 Controls: arrows move, Ctrl fires, Space opens doors, Enter/Esc for menus.
 
-The app also adds a `doom` command to DOOM-PC's Command Prompt. It prints a banner and points to the Desktop: nothing in a Desktop app's APIs can open its own window.
+Typing `doom` in DOOM-PC's Command Prompt shows a DOOM banner and points you to the Desktop icon. It can't start the game itself.
 
 ## How it works
 
