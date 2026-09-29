@@ -42,8 +42,9 @@
     ""].join("\n");
   // Python, not JavaScript: a main.js failed with "undefined is not a
   // function"; this is the built-in MQTT Client's pattern. Nothing in the
-  // app's APIs opens its own window, so the `doom` command points to the
-  // Desktop; doom-command.js, if running, also opens the game window.
+  // app's APIs opens its own window, so the `doom` command only prints; the
+  // window comes from a watcher (the installer .pkt's script, or
+  // doom-command.js).
   var MAIN_PY = [
     "from gui import *",
     "from cli import *",
@@ -62,7 +63,7 @@
     "        for line in BANNER:",
     "            print(line)",
     "        print(\"\")",
-    "        print(\"Play it from this PC's Desktop tab: Desktop > DOOM.\")",
+    "        print(\"Opening DOOM... If no window opens, play it from Desktop > DOOM.\")",
     "        CLI.exit()",
     "",
     "def main():",
