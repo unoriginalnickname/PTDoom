@@ -1,17 +1,19 @@
-"""Make the DOS Desktop app's files: v86, FreeDOS and a game.
+"""Make the DOS Desktop app's files: v86, FreeDOS and games.
 
 Output, in dist/v86app/:
   index.html   small page
-  ptdos.js     web/v86-dos.js: unzips the game, builds drive C:, boots v86
+  ptdos.js     web/v86-dos.js: unzips the games, builds drive C:, boots v86
   libv86.js    v86
   v86data.js   BIOS, VGA BIOS, FreeDOS floppy, v86.wasm and opl.wasm, as base64
-  game.js      the game, a .zip, as base64
+  g1.js        a game (a .zip, as base64) for window.PTDOS_GAMES
+  games.json   the list of installed games, for the installer page
   icon.png     a DOS prompt
 and dist/install-v86-app.js, pt/install-v86-app.js with this repo's path filled in.
 
-The game is a .zip given on the command line; it must hold PTDOS.BAT, which
-the floppy's AUTOEXEC.BAT runs from C:. With no argument, shareware DOOM from
-dosgames/doom/ is zipped with a PTDOS.BAT that runs it.
+With no argument the one game is shareware DOOM from dosgames/doom/. With
+--no-game there are none, and installing removes the PCs' games: that's the
+installer .pkt's state. Its installer page (pt/dos-installer/) adds games as
+g<n>.js and lists them in the page between the <!--games--> markers.
 
 v86 comes from vendor/v86/ (npm package v86, plus bios/*.bin from its GitHub
 repo), FreeDOS from dosgames/freedos/freedos722.img (https://i.copy.sh/freedos722.img).
@@ -35,12 +37,13 @@ DOOM_DIR = ROOT / "dosgames" / "doom"
 
 AUTOEXEC = """@echo off
 set PATH=A:\\FDOS
-if exist C:\\PTDOS.BAT goto game
+set BLASTER=A220 I5 D1 H5 T6
+if exist C:\\PTDOS.BAT goto games
 echo.
-echo FreeDOS in Packet Tracer. No game found (C:\\PTDOS.BAT).
+echo FreeDOS in Packet Tracer. No games installed yet.
 echo.
 goto end
-:game
+:games
 C:
 call C:\\PTDOS.BAT
 :end
@@ -80,7 +83,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden}
 <div id="screen"><div></div><canvas style="display:none"></canvas></div><pre id="log"></pre>
 <script src="libv86.js"></script>
 <script src="v86data.js"></script>
-<script src="game.js"></script>
+<!--games-->GAME_TAGS<!--/games-->
 <script src="ptdos.js"></script>
 </body></html>
 """
@@ -196,7 +199,6 @@ def doom_zip() -> bytes:
         z.write(DOOM_DIR / "DOOM.EXE", "DOOM.EXE")
         z.write(DOOM_DIR / "DOOM1.WAD", "DOOM1.WAD")
         z.writestr("DEFAULT.CFG", DOOM_CFG)
-        z.writestr("PTDOS.BAT", "@echo off\r\ndoom\r\n")
     return buf.getvalue()
 
 
@@ -219,6 +221,12 @@ def embed(files: dict[str, bytes]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def game_script(name: str, command: str, zip_bytes: bytes) -> str:
+    """One installed game, in the form pt/dos-installer/installer.html writes."""
+    entry = {"name": name, "command": command, "zip": base64.b64encode(zip_bytes).decode("ascii")}
+    return "window.PTDOS_GAMES=window.PTDOS_GAMES||[];PTDOS_GAMES.push(%s);\n" % json.dumps(entry)
+
+
 def write(name: str, text: str) -> None:
     (OUT / name).write_text(text, encoding="ascii", newline="\n")
 
@@ -227,12 +235,14 @@ def main() -> int:
     for f in (V86 / "libv86.js", V86 / "v86.wasm", V86 / "seabios.bin", V86 / "vgabios.bin", FLOPPY, OPL):
         if not f.exists():
             sys.exit(f"{f.relative_to(ROOT)} missing (see the docstring)")
-    game = open(sys.argv[1], "rb").read() if len(sys.argv) > 1 else doom_zip()
-    if "PTDOS.BAT" not in [n.upper() for n in zipfile.ZipFile(io.BytesIO(game)).namelist()]:
-        sys.exit("the game's zip has no PTDOS.BAT at its top level")
+    args = sys.argv[1:]
+    if args not in ([], ["--no-game"]):
+        sys.exit("usage: make_v86_app.py [--no-game]")
+    games = [] if args else [{"file": "g1.js", "name": "DOOM", "command": "DOOM", "zip": doom_zip()}]
 
     OUT.mkdir(parents=True, exist_ok=True)
-    write("index.html", PAGE)
+    tags = "".join('<script src="%s"></script>' % g["file"] for g in games)
+    write("index.html", PAGE.replace("GAME_TAGS", tags))
     write("ptdos.js", (ROOT / "web" / "v86-dos.js").read_text(encoding="ascii"))
     write("libv86.js", (V86 / "libv86.js").read_text(encoding="ascii"))
     write("v86data.js", embed({
@@ -242,7 +252,11 @@ def main() -> int:
         "wasm": (V86 / "v86.wasm").read_bytes(),
         "opl": OPL.read_bytes(),
     }))
-    write("game.js", embed({"game": game}))
+    for old in list(OUT.glob("g*.js")) + [OUT / "game.js"]:
+        old.unlink(missing_ok=True)
+    for g in games:
+        write(g["file"], game_script(g["name"], g["command"], g["zip"]))
+    write("games.json", json.dumps([{"file": g["file"], "name": g["name"]} for g in games]))
     make_icon().save(OUT / "icon.png")
 
     # Packet Tracer wants forward slashes, also on Windows.
@@ -250,9 +264,12 @@ def main() -> int:
     (DIST / "install-v86-app.js").write_text(installer.replace("__PTDOOM_DIST__", DIST.as_posix()),
                                              encoding="utf-8", newline="\n")
 
-    outputs = [OUT / f for f in ("index.html", "ptdos.js", "libv86.js", "v86data.js", "game.js", "icon.png")]
+    outputs = [OUT / f for f in ("index.html", "ptdos.js", "libv86.js", "v86data.js", "icon.png", "games.json")]
+    outputs += [OUT / g["file"] for g in games]
     for f in outputs + [DIST / "install-v86-app.js"]:
         print(f"ok: {f.relative_to(ROOT)} ({f.stat().st_size:,} bytes)")
+    if not games:
+        print("no games: installing removes the PCs' games")
     return 0
 
 

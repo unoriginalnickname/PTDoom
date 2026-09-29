@@ -1,0 +1,281 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DOS games</title>
+<style>
+  /* Packet Tracer draws this window on white whatever the page says, so
+     every colour here is chosen for a white background. */
+  body { margin: 16px 20px; color: #222; font: 14px sans-serif; }
+  h1 { margin: 0 0 8px; color: #0b0b6a; font: bold 22px monospace; }
+  h2 { margin: 16px 0 6px; padding: 4px 8px; color: #fff; background: #0b0b6a; font: bold 15px monospace; }
+  code, b { color: #0b0b6a; font-weight: bold; }
+  label { display: block; margin-top: 10px; font-weight: bold; }
+  input[type=text] { width: 16em; margin-left: 6px; padding: 2px 4px; color: #000; background: #fff; font: 14px monospace; border: 1px solid #889; text-transform: uppercase; }
+  #name { width: 9em; }
+  .hint { color: #666; font-size: 12px; margin: 2px 0 0 0; }
+  button { margin-top: 10px; padding: 5px 14px; font-size: 14px; }
+  #games div { font: 14px monospace; margin: 4px 0; }
+  #games button { margin: 0 0 0 12px; padding: 1px 8px; font-size: 12px; }
+  #files { margin-top: 6px; max-height: 80px; overflow: auto; color: #666; font: 12px monospace; white-space: pre; }
+  #log { margin-top: 12px; color: #060; font: 13px monospace; white-space: pre-wrap; }
+  #log .err { color: #c00; }
+</style>
+</head>
+<body>
+<h1>C:\&gt; DOS games</h1>
+<p>The DOS app runs FreeDOS in an emulated PC (v86). Each game gets a folder on
+drive <code>C:</code>; at the <code>C:\&gt;</code> prompt, type its name to play.
+Only use games you may copy: shareware, freeware, or your own.</p>
+
+<h2>Installed</h2>
+<div id="games">...</div>
+
+<h2>Add a game</h2>
+<input type="file" id="pick" accept=".zip,.ZIP">
+<div id="files"></div>
+<label>Name: <input type="text" id="name" maxlength="8" spellcheck="false" disabled></label>
+<div class="hint">You'll type this at <code>C:\&gt;</code> to play. Up to 8 letters or digits.</div>
+<label>Program: <input type="text" id="command" spellcheck="false" disabled></label>
+<div class="hint">The game's program, filled in for you. Change it only if the game doesn't start.</div>
+<button id="install" disabled>Install</button>
+<div id="log"></div>
+<script>
+// Runs inside the .pkt's File Script Module (pt/dos-installer/ptdos.js opens it).
+// Every PC with the DOS app gets the same games. Each game is a [gui]g<n>.js
+// holding {name, command, zip}; games.json lists them; the app's page
+// ([gui]index.html) loads them from between its <!--games--> markers. The
+// app (web/v86-dos.js) turns each into C:\<NAME>\ and C:\<NAME>.BAT.
+var ID = "com.ptdoom.dos";
+var FOLDER = ID + " (Python)";
+var RESERVED = ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "LPT1", "LPT2", "LPT3", "PTDOS", "AUTOEXEC", "CONFIG", "COMMAND"];
+var zipBytes = null;
+
+var logEl = document.getElementById("log");
+function log(text, isError) {
+  var line = document.createElement("div");
+  if (isError) line.className = "err";
+  line.textContent = text;
+  logEl.appendChild(line);
+}
+
+function call(obj, name, args) {
+  return new Promise(function (resolve) { obj.ipcCallArgsAsync(name, args || [], resolve); });
+}
+
+// --- the PCs' app folders ----------------------------------------------------
+
+async function appDirs() {
+  var net = await call(ipc, "network");
+  var count = await call(net, "getDeviceCount"), dirs = [];
+  for (var i = 0; i < count; i++) {
+    var dev = await call(net, "getDeviceAt", [i]);
+    if (!(await call(dev, "getUserDesktopAppById", [ID]))) continue;
+    var fs = await call(await call(dev, "getProcess", ["FileManager"]), "getFileSystem", ["Dev:"]);
+    dirs.push({ pc: await call(dev, "getName"), dir: await call(fs, "getFile", [FOLDER]) });
+  }
+  return dirs;
+}
+
+async function readText(dir, name) {
+  if (!(await call(dir, "fileExist", [name]))) return null;
+  var content = await call(await call(dir, "getFile", [name]), "getContent", [true]);
+  return content && typeof content.text === "string" ? content.text : null;
+}
+
+// addTextFile won't replace a file.
+async function writeText(dir, name, text) {
+  if (await call(dir, "fileExist", [name])) await call(dir, "removeFile", [name, true]);
+  if (!(await call(dir, "addTextFile", [name, text, true]))) throw new Error("could not write " + name);
+}
+
+async function readGames(dir) {
+  var text = await readText(dir, "games.json");
+  try { return text ? JSON.parse(text) : []; } catch (e) { return []; }
+}
+
+// Writes games.json and the page's script tags for the list.
+async function saveGames(dir, games) {
+  await writeText(dir, "games.json", JSON.stringify(games));
+  var page = await readText(dir, "[gui]index.html");
+  var m = page && page.match(/<!--games-->[\s\S]*?<!--\/games-->/);
+  if (!m) throw new Error("the DOS app's page has no games markers: reinstall the app");
+  var tags = games.map(function (g) { return '<script src="' + g.file + '"></scr' + 'ipt>'; }).join("");
+  // Split rather than replace(): no "$" patterns to worry about.
+  var parts = page.split(m[0]);
+  await writeText(dir, "[gui]index.html", parts[0] + "<!--games-->" + tags + "<!--/games-->" + parts[1]);
+}
+
+// --- list ---------------------------------------------------------------------
+
+async function showGames() {
+  var el = document.getElementById("games");
+  var dirs = await appDirs();
+  if (!dirs.length) { el.textContent = "No PC on the canvas has the DOS app."; return; }
+  var games = await readGames(dirs[0].dir);
+  el.textContent = games.length ? "" : "None yet.";
+  games.forEach(function (g) {
+    var row = document.createElement("div"), btn = document.createElement("button");
+    row.textContent = "C:\\>" + g.name.toLowerCase();
+    // A second click confirms: dialogs may not work in Packet Tracer's windows.
+    btn.textContent = "Remove";
+    btn.onclick = function () {
+      if (btn.textContent === "Remove") { btn.textContent = "Remove " + g.name + " from every PC?"; return; }
+      remove(g.name);
+    };
+    row.appendChild(btn);
+    el.appendChild(row);
+  });
+}
+
+async function remove(name) {
+  logEl.textContent = "";
+  try {
+    var dirs = await appDirs();
+    for (var i = 0; i < dirs.length; i++) {
+      var games = await readGames(dirs[i].dir), keep = [];
+      for (var k = 0; k < games.length; k++) {
+        if (games[k].name === name) {
+          if (await call(dirs[i].dir, "fileExist", ["[gui]" + games[k].file])) await call(dirs[i].dir, "removeFile", ["[gui]" + games[k].file, true]);
+        } else keep.push(games[k]);
+      }
+      await saveGames(dirs[i].dir, keep);
+    }
+    log(name + " removed. Close and reopen the DOS app to see it gone.");
+  } catch (e) {
+    log("Remove failed: " + e.message, true);
+  }
+  showGames();
+}
+
+// --- add ----------------------------------------------------------------------
+
+// File names in a zip, from its central directory.
+function zipNames(zip) {
+  var v = new DataView(zip.buffer), eocd = -1;
+  for (var i = zip.length - 22; i >= Math.max(0, zip.length - 65557); i--) {
+    if (v.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) return null;
+  var count = v.getUint16(eocd + 10, true), at = v.getUint32(eocd + 16, true), names = [];
+  for (var n = 0; n < count; n++) {
+    if (v.getUint32(at, true) !== 0x02014b50) return null;
+    var len = v.getUint16(at + 28, true);
+    names.push(new TextDecoder("latin1").decode(zip.subarray(at + 46, at + 46 + len)).replace(/\\/g, "/"));
+    at += 46 + len + v.getUint16(at + 30, true) + v.getUint16(at + 32, true);
+  }
+  return names;
+}
+
+// The app drops a folder that holds everything (web/v86-dos.js,
+// stripCommonFolder); do the same here so the command is right.
+function stripCommonFolder(names) {
+  var first = names.length && names[0].split("/")[0];
+  var all = first && names.every(function (n) { return n.indexOf(first + "/") === 0; });
+  if (!all) return names;
+  return names.map(function (n) { return n.slice(first.length + 1); }).filter(Boolean);
+}
+
+// A program in the shallowest folder that has one, skipping setup tools,
+// installers and order catalogues when there's a choice, and preferring one
+// named like the zip (wolf3d14.zip: WOLF3D.EXE).
+function guessCommand(names, zipName) {
+  var progs = names.filter(function (n) { return /\.(exe|com|bat)$/i.test(n); });
+  if (!progs.length) return "";
+  var depth = function (n) { return n.split("/").length; };
+  var base = function (n) { return n.split("/").pop().replace(/\.(exe|com|bat)$/i, "").toUpperCase(); };
+  var min = Math.min.apply(null, progs.map(depth));
+  var top = progs.filter(function (n) { return depth(n) === min; });
+  var likely = top.filter(function (n) { return !/(setup|install|config|setsound|uninst|readme|catalog|order|vendor|help|deice)/i.test(base(n)); });
+  if (!likely.length) likely = top;
+  var z = (zipName || "").toUpperCase().replace(/\.ZIP$/, "").replace(/[^A-Z0-9]/g, "");
+  var named = likely.filter(function (n) { var b = base(n).slice(0, 4); return b.length >= 3 && z.indexOf(b) === 0; });
+  var pick = (named.length ? named : likely)[0];
+  return pick.replace(/\.(exe|com|bat)$/i, "").split("/").join("\\");
+}
+
+// The Program box ("KEEN4E", "SUB\GAME -x") as the launcher's lines, which
+// run in the game's folder: a program in a subfolder needs a cd first.
+function commandLines(program) {
+  var m = program.trim().match(/^(\S*)\\([^\\\s]+)(.*)$/);
+  return m ? "cd " + m[1] + "\n" + m[2] + m[3] : program.trim();
+}
+
+function cleanName(s) { return s.toUpperCase().replace(/[^A-Z0-9_]/g, "").slice(0, 8); }
+
+function toBase64(bytes) {
+  var parts = [];
+  for (var i = 0; i < bytes.length; i += 0x8000) {
+    parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)));
+  }
+  return btoa(parts.join(""));
+}
+
+async function install(zip, name, command) {
+  var dirs = await appDirs(), done = [];
+  var entry = JSON.stringify({ name: name, command: command, zip: toBase64(zip) });
+  for (var i = 0; i < dirs.length; i++) {
+    var dir = dirs[i].dir, games = await readGames(dir);
+    // Installing a name again replaces that game.
+    var old = games.filter(function (g) { return g.name === name; })[0];
+    games = games.filter(function (g) { return g.name !== name; });
+    var n = 1;
+    while (games.some(function (g) { return g.file === "g" + n + ".js"; })) n++;
+    if (old && old.file !== "g" + n + ".js" && await call(dir, "fileExist", ["[gui]" + old.file])) await call(dir, "removeFile", ["[gui]" + old.file, true]);
+    var file = "g" + n + ".js";
+    await writeText(dir, "[gui]" + file, "window.PTDOS_GAMES=window.PTDOS_GAMES||[];PTDOS_GAMES.push(" + entry + ");\n");
+    games.push({ file: file, name: name });
+    await saveGames(dir, games);
+    done.push(dirs[i].pc);
+  }
+  return done;
+}
+
+var nameEl = document.getElementById("name"), commandEl = document.getElementById("command"), installEl = document.getElementById("install");
+
+document.getElementById("pick").addEventListener("change", async function () {
+  var file = this.files[0];
+  logEl.textContent = "";
+  document.getElementById("files").textContent = "";
+  zipBytes = null;
+  nameEl.disabled = commandEl.disabled = installEl.disabled = true;
+  if (!file) return;
+  var bytes = new Uint8Array(await file.arrayBuffer());
+  var names = zipNames(bytes);
+  if (!names) { log(file.name + " isn't a zip file.", true); return; }
+  var files = stripCommonFolder(names.filter(function (n) { return !/\/$/.test(n); }));
+  document.getElementById("files").textContent = files.slice(0, 200).join("\n") + (files.length > 200 ? "\n..." : "");
+  nameEl.value = cleanName(file.name.replace(/\.zip$/i, "")) || "GAME";
+  commandEl.value = guessCommand(files, file.name);
+  if (!commandEl.value) log("No program found in the zip: type its name in Program.", true);
+  zipBytes = bytes;
+  nameEl.disabled = commandEl.disabled = installEl.disabled = false;
+  log(file.name + ": " + files.length + " files, " + (bytes.length / 1048576).toFixed(1) + " MB. Check the name, then Install.");
+});
+
+installEl.addEventListener("click", async function () {
+  if (!zipBytes) return;
+  var name = cleanName(nameEl.value);
+  if (!name) { log("Give the game a name.", true); return; }
+  if (RESERVED.indexOf(name) !== -1) { log(name + " is taken by DOS: choose another name.", true); return; }
+  installEl.disabled = true;
+  log("Installing " + name + "...");
+  try {
+    var pcs = await install(zipBytes, name, commandLines(commandEl.value));
+    if (!pcs.length) { log("No PC on the canvas has the DOS app.", true); return; }
+    log("Installed on " + pcs.join(", ") + ".");
+    log("\nSave the file under a new name (File > Save As), then click " + pcs[0] +
+        " > Desktop > DOS and type " + name.toLowerCase() + " at C:\\>.");
+    log("Add more games the same way. Typing dos in the PC's Command Prompt opens this window again.");
+  } catch (e) {
+    log("Install failed: " + e.message, true);
+  } finally {
+    installEl.disabled = false;
+    showGames();
+  }
+});
+
+showGames().catch(function (e) { document.getElementById("games").textContent = "Couldn't read the games: " + e.message; });
+</script>
+</body>
+</html>

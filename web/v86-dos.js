@@ -1,19 +1,25 @@
 // The DOS app's page: boots FreeDOS in v86 with the game on drive C:.
 //
-// Everything arrives embedded as base64 in window.V86DATA (from the [gui]
-// scripts): the BIOSes, the FreeDOS floppy, v86's wasm and the game as a
-// .zip. The page unzips the game and builds a FAT16 hard disk from it here,
-// so the app stores the compressed game rather than a mostly empty disk.
-// The floppy's AUTOEXEC.BAT runs C:\PTDOS.BAT, which starts the game.
+// Everything arrives embedded as base64 (from the [gui] scripts): the
+// BIOSes, the FreeDOS floppy and v86's wasm in window.V86DATA, and each game
+// as a .zip in window.PTDOS_GAMES. The page unzips the games and builds a
+// FAT16 hard disk from them here, so the app stores compressed games rather
+// than a mostly empty disk. The floppy's AUTOEXEC.BAT runs C:\PTDOS.BAT,
+// which lists the games.
 (function () {
   var logEl = document.getElementById("log");
   function log(m) { logEl.textContent += m + "\n"; }
   window.onerror = function (m, s, l) { log("error: " + m + " (" + l + ")"); };
   window.addEventListener("unhandledrejection", function (e) { log("error: " + (e.reason && e.reason.message || e.reason)); });
 
-  function take(name) {
-    var b = atob(V86DATA[name]), u = new Uint8Array(b.length);
+  function decode(b64) {
+    var b = atob(b64), u = new Uint8Array(b.length);
     for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+    return u;
+  }
+
+  function take(name) {
+    var u = decode(V86DATA[name]);
     delete V86DATA[name];
     return u;
   }
@@ -269,17 +275,83 @@
     node.connect(ctx.destination);
   }
 
+  // --- VGA status ---------------------------------------------------------------
+
+  // Port 0x3DA (and 0x3BA), VGA Input Status 1, timed like a real 70 Hz card.
+  // v86 flips bit 0 on every read and shows vertical retrace (bit 3) for a
+  // single read per drawn frame. Wolfenstein 3D's VL_SetScreen (ID_VL_A.ASM),
+  // run before its timer is hooked, waits for display (bit 0 clear) and then
+  // four reads in a row of blanking without retrace (bit 0 set, bit 3 clear),
+  // which v86 never gives: a black screen forever. Here each frame ends in a
+  // vertical blank (bit 0 held) containing the retrace (bit 3), with bit 0
+  // flickering for the horizontal blanks during display. v86 still latches
+  // the start address (page flipping) on its own frames.
+  function realRetrace(emu) {
+    var vga = emu.v86.cpu.devices.vga, io = emu.v86.cpu.io;
+    var FRAME = 1000 / 70, LINE = FRAME / 449;
+    function status() {
+      vga.attribute_controller_index = -1;   // as v86's own handler does
+      var now = performance.now(), p = (now % FRAME) / FRAME;
+      if (p >= 0.95) return p >= 0.965 && p < 0.975 ? 0x09 : 0x01;
+      return (now % LINE) < LINE * 0.2 ? 0x01 : 0x00;
+    }
+    io.register_read(0x3DA, vga, status);
+    io.register_read(0x3BA, vga, status);
+  }
+
   // --- boot ------------------------------------------------------------------
 
+  // A zip whose files all sit in one folder gets that folder dropped, so
+  // keen.zip holding KEEN\... becomes C:\KEEN\..., not C:\KEEN\KEEN\....
+  // pt/dos-installer/installer.html guesses start commands by the same rule.
+  // Decided on the files alone, like the installer, which only sees names.
+  function stripCommonFolder(files) {
+    var real = files.filter(function (f) { return !f.dir; });
+    var first = real.length && real[0].path.split("/")[0];
+    var all = first && real.every(function (f) { return f.path.indexOf(first + "/") === 0; });
+    if (!all) return files;
+    var prefix = first + "/";
+    return files.filter(function (f) { return f.path !== prefix; }).map(function (f) {
+      return f.path.indexOf(prefix) === 0 ? { path: f.path.slice(prefix.length), data: f.data, dir: f.dir } : f;
+    });
+  }
+
+  function bat(lines) {
+    return { path: "", data: new TextEncoder().encode(lines.join("\r\n") + "\r\n") };
+  }
+
+  // Each installed game ([gui]g<n>.js, from the installer) is a folder
+  // C:\<NAME> with a C:\<NAME>.BAT that enters it and runs its command, so
+  // typing the game's name at C:\> plays it. C:\PTDOS.BAT, run at boot,
+  // lists the games.
+  async function gamesDisk(games) {
+    var files = [], names = [];
+    for (var g = 0; g < games.length; g++) {
+      var game = games[g], name = game.name.toUpperCase();
+      stripCommonFolder(await unzip(decode(game.zip))).forEach(function (f) {
+        files.push({ path: name + "/" + f.path, data: f.data, dir: f.dir });
+      });
+      var run = bat(["@echo off", "cd \\" + name].concat(game.command ? game.command.split(/\r?\n/) : []).concat(["cd \\"]));
+      run.path = name + ".BAT";
+      files.push(run);
+      names.push(name);
+      game.zip = null;
+    }
+    var menu = bat(["@echo off", "echo.", "echo Games on C: " + names.join("  "), "echo Type a name to play it.", "echo."]);
+    menu.path = "PTDOS.BAT";
+    files.push(menu);
+    return { disk: fat16Disk(files), names: names, count: files.filter(function (f) { return !f.dir; }).length };
+  }
+
   async function start() {
-    // No game installed yet ([gui]game.js missing): FreeDOS alone, no C:.
-    var disk = null;
-    if (V86DATA.game) {
-      var files = await unzip(take("game"));
-      disk = fat16Disk(files);
-      log(files.filter(function (f) { return !f.dir; }).length + " files, " + (disk.length / 1048576).toFixed(0) + " MB disk");
+    // No game installed yet: FreeDOS alone, no C:.
+    var disk = null, games = window.PTDOS_GAMES || [];
+    if (games.length) {
+      var made = await gamesDisk(games);
+      disk = made.disk;
+      log(made.names.join(", ") + ": " + made.count + " files, " + (disk.length / 1048576).toFixed(0) + " MB disk");
     } else {
-      log("no game installed");
+      log("no games installed");
     }
     var wasm = take("wasm");
     var options = {
@@ -300,6 +372,7 @@
     window.emu = emu;
     var opl = take("opl");
     emu.add_listener("emulator-loaded", function () {
+      realRetrace(emu);
       attachOpl(emu, opl).then(function () { log("FM music on"); }, function (e) { log("FM music failed: " + e.message); });
     });
     setTimeout(function () {

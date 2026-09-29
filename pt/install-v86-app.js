@@ -9,9 +9,10 @@
 // system. Files prefixed [gui] belong to the page. The page itself is loaded
 // as a data: URL capped at 2 MB, but Packet Tracer rewrites references to the
 // other [gui] files into user-app: URLs with no such cap, so v86 lives in
-// [gui]libv86.js, its data in [gui]v86data.js and the game in [gui]game.js
-// (see tools/make_v86_app.py). Packet Tracer keeps binary files such as the
-// icon as base64 text, which is what getFileBinaryContents returns.
+// [gui]libv86.js, its data in [gui]v86data.js and each game in [gui]g<n>.js,
+// listed in games.json (see tools/make_v86_app.py). Packet Tracer keeps
+// binary files such as the icon as base64 text, which is what
+// getFileBinaryContents returns.
 (function () {
   // Device names to install on; empty means every PC and laptop.
   var DEVICES = [];
@@ -25,7 +26,7 @@
     "<id>" + ID + "</id>",
     "<version>1.0</version>",
     "<name>DOS</name>",
-    "<description>A DOS game in FreeDOS in v86.</description>",
+    "<description>DOS games in FreeDOS in v86.</description>",
     "<author>PTDoom</author>",
     "<gui>",
     "<name>DOS</name>",
@@ -35,14 +36,15 @@
     "<cli>",
     "<command>",
     "<name>dos</name>",
-    "<description>Play the DOS game.</description>",
+    "<description>Add or remove DOS games.</description>",
     "</command>",
     "</cli>",
     "</application>",
     ""].join("\n");
   // Python, not JavaScript: a main.js failed with "undefined is not a
   // function"; this is the built-in MQTT Client's pattern. Nothing in the
-  // app's APIs opens its own window, so the `dos` command only prints.
+  // app's APIs opens its own window, so the `dos` command only prints; the
+  // games window comes from the installer .pkt's script, which watches for it.
   var MAIN_PY = [
     "from gui import *",
     "from cli import *",
@@ -50,7 +52,8 @@
     "",
     "def cliEvent(type, args):",
     "    if type == \"invoked\":",
-    "        print(\"FreeDOS in v86. Play it from Desktop > DOS.\")",
+    "        print(\"Opening the DOS games window (add or remove games).\")",
+    "        print(\"Play them from Desktop > DOS: type a game's name at C:\\\\>.\")",
     "        CLI.exit()",
     "",
     "def main():",
@@ -71,15 +74,26 @@
     "[gui]ptdos.js": sfm.getFileContents(APP_DIR + "ptdos.js"),
     "[gui]libv86.js": sfm.getFileContents(APP_DIR + "libv86.js"),
     "[gui]v86data.js": sfm.getFileContents(APP_DIR + "v86data.js"),
-    "[gui]game.js": sfm.getFileContents(APP_DIR + "game.js"),
     "[gui]icon.png": sfm.getFileBinaryContents(APP_DIR + "icon.png")
   };
   for (var f in files) {
     if (!files[f]) return "missing " + f + " in " + APP_DIR + ": run tools/make_v86_app.py";
   }
+  // The games: games.json lists them (none after make_v86_app.py --no-game,
+  // for the installer .pkt), and each is a [gui]g<n>.js. The PCs' old games
+  // are replaced by these.
+  var list = sfm.getFileContents(APP_DIR + "games.json");
+  if (!list) return "missing games.json in " + APP_DIR + ": run tools/make_v86_app.py";
+  files["games.json"] = list;
+  var games = JSON.parse(list);
+  for (var g = 0; g < games.length; g++) {
+    files["[gui]" + games[g].file] = sfm.getFileContents(APP_DIR + games[g].file);
+    if (!files["[gui]" + games[g].file]) return "missing " + games[g].file + " in " + APP_DIR;
+  }
 
-  // The js-dos version's files, gone since v86 replaced it.
-  var OLD = ["[gui]jsdos.js", "[gui]emulators.js"];
+  // The js-dos version's files, the one-game version's, and any games.
+  var OLD = ["[gui]jsdos.js", "[gui]emulators.js", "[gui]game.js"];
+  for (var n = 1; n <= 99; n++) OLD.push("[gui]g" + n + ".js");
 
   function install(device) {
     var root = device.getProcess("FileManager").getFileSystem("Dev:");
