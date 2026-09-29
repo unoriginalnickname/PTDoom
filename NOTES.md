@@ -83,12 +83,23 @@ Nobody seems to have run a DOS emulator or game in Packet Tracer before (searche
   - The Worker is made from a `fetch` of `wdosbox.js` turned into a blob URL: works from the app's `data:` page too.
   - Packet Tracer rewrites `[gui]` file names anywhere in the page, so the bundle is `bundle.jsdos` (`game.jsdos` contains `game.js`).
   - js-dos ships non-ASCII (Russian UI strings); `make_dos_app.py` escapes it to `\uXXXX`.
-- **Performance ceiling**: DOSBox in WebAssembly has no dynamic core, and js-dos's faster JSPI build needs a newer Chrome than 130. Bigger jump: v86 (x86 to WebAssembly JIT, no SharedArrayBuffer needed), untested.
+- **Performance ceiling**: DOSBox in WebAssembly has no dynamic core, and js-dos's faster JSPI build needs a newer Chrome than 130.
+
+## DOS games through v86 (2026-09-30)
+
+v86 0.5.462 (npm `v86`: `libv86.js`, `v86.wasm`; `bios/seabios.bin` and `vgabios.bin` from its GitHub repo; all in `vendor/v86/`, gitignored). FreeDOS: `https://i.copy.sh/freedos722.img` in `dosgames/freedos/`. `tools/make_v86_test.py` builds `dist/v86test/`: boots FreeDOS from the floppy, DOOM on a generated FAT16 hard disk (the script writes MBR, BPB, FATs and root directory itself; 7-Zip reads it), types `c:` and `doom` after 8 s.
+
+- Everything in memory again: images as `{buffer: ArrayBuffer}`, the wasm through `wasm_fn`. No SharedArrayBuffer needed.
+- **Packet Tracer's AudioWorklet is bad for v86 too**: crackle, and slower. `?sa=0` hides `window.AudioWorklet`, so v86 uses its fallback player (`SpeakerBufferSourceDAC`): "near perfect", sound and speed. So the fault is Packet Tracer's AudioWorklet, not js-dos's time-stretcher alone.
+- **Faster than js-dos** and cleaner sound: v86 is the better base.
+- **No music**: v86's SB16 accepts FM (OPL) register writes and ignores them (`fm_default_write`). DOOM's config uses music device 0; SB IRQ 5, DMA 1 (v86's defaults).
+- The disk is 16 MB, mostly zeros, so `disk.js` is 22 MB of base64: shrink it, or build the disk in the page.
 
 ## To do
 
 Done: `doom` command tested by hand (prints the banner; with `doom-command.js` running, the game window opens too, confirmed). Pushed to https://github.com/unoriginalnickname/PTDoom (public, no-reply author email).
 
-1. DOS app: an installer in the .pkt that asks for a game (.jsdos or .zip), like the WAD; try other games; the gunshot crackle; cheap speed-ups (DOOM's low detail, `offscreenCanvas`).
-2. Try v86 against the same DOS DOOM test for speed.
-3. Maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
+1. DOS app on v86 instead of js-dos, with an installer in the .pkt that asks for a game, like the WAD.
+2. Floppy drive: drop a disk image on the app to insert it (v86 `set_fda` / `eject_fda` at runtime). The user's idea.
+3. Music under v86: feed its FM register writes to an OPL3 emulator (Nuked OPL3 is already in `src/music/`).
+4. Maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
