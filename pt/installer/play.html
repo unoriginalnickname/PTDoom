@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DOOM</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; }
+  #msg { padding: 16px; color: #ccc; font: 14px monospace; }
+</style>
+</head>
+<body>
+<div id="msg">loading DOOM...</div>
+<script>
+// Opened by ptdoom.js when someone types `doom` in a PC's Command Prompt.
+// The game lives in that PC's DOOM app, so read the app's page, engine and
+// WAD through IPC, put the two scripts inline, and replace this page with it.
+var FOLDER = "com.ptdoom.doom (Python)";
+var APP_SCRIPTS = '<script src="wad.js"></scr' + 'ipt><script id=mainScript src="doom.js"></scr' + 'ipt>';
+
+function call(obj, name, args) {
+  return new Promise(function (resolve) { obj.ipcCallArgsAsync(name, args || [], resolve); });
+}
+
+var msgEl = document.getElementById("msg");
+function step(text) { msgEl.textContent = text; }
+
+async function readAppFile(dir, name) {
+  step("reading " + name + "...");
+  var file = await call(dir, "getFile", [name]);
+  if (!file) throw new Error(name + " is missing");
+  var content = await call(file, "getContent", [true]);
+  if (!content || typeof content.text !== "string") throw new Error("no text in " + name + ": " + JSON.stringify(content).slice(0, 80));
+  return content.text;
+}
+
+async function appDir(net, pcName) {
+  var dev = pcName ? await call(net, "getDevice", [pcName]) : null;
+  if (dev) return call(await call(await call(dev, "getProcess", ["FileManager"]), "getFileSystem", ["Dev:"]), "getFile", [FOLDER]);
+  // No name: the first PC with the game installed.
+  var count = await call(net, "getDeviceCount");
+  for (var i = 0; i < count; i++) {
+    dev = await call(net, "getDeviceAt", [i]);
+    var fs = await call(await call(dev, "getProcess", ["FileManager"]), "getFileSystem", ["Dev:"]);
+    var dir = fs && await call(fs, "getFile", [FOLDER]);
+    if (dir && await call(dir, "fileExist", ["[gui]wad.js"])) return dir;
+  }
+  return null;
+}
+
+async function start(pcName) {
+  step("finding the DOOM app" + (pcName ? " on " + pcName : "") + "...");
+  var net = await call(ipc, "network");
+  var dir = await appDir(net, pcName);
+  if (!dir) throw new Error("no PC has DOOM installed");
+  var page = await readAppFile(dir, "[gui]index.html");
+  var wad = await readAppFile(dir, "[gui]wad.js");
+  var engine = await readAppFile(dir, "[gui]doom.js");
+  if (page.indexOf(APP_SCRIPTS) === -1) throw new Error("unexpected app page");
+  // Split around the marker instead of String.replace: the engine contains
+  // "$" sequences that replace() would treat as patterns.
+  var parts = page.split(APP_SCRIPTS);
+  step("starting...");
+  document.open();
+  document.write(parts[0] + "<script>" + wad + "</scr" + "ipt><script id=mainScript>" + engine + "</scr" + "ipt>" + parts[1]);
+  document.close();
+}
+
+// Ask ptdoom.js which PC the command came from; if it doesn't answer
+// quickly, use the first PC with the game.
+var started = false;
+function go(pcName) {
+  if (started) return;
+  started = true;
+  start(pcName).catch(function (e) { step("Couldn't start DOOM: " + e.message); });
+}
+step("asking which PC...");
+try { $se("getPlayPc", go); } catch (e) {}
+setTimeout(function () { go(""); }, 1000);
+</script>
+</body>
+</html>

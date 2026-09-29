@@ -23,13 +23,13 @@ You need Packet Tracer 9.0.1 and a DOOM game file (a WAD).
 
 Controls: arrows move, Ctrl fires, Space opens doors, Enter/Esc for menus.
 
-Typing `doom` in DOOM-PC's Command Prompt shows a DOOM banner and points you to the Desktop icon. It can't start the game itself.
+You can also type `doom` in DOOM-PC's Command Prompt: the game opens in its own window.
 
 ## How it works
 
 A Desktop app is a project folder on the PC with an `app_manifest.xml`, a `main.py`, and page files prefixed `[gui]`. The page itself is loaded as a `data:` URL capped at 2 MB, but Packet Tracer serves the app's other `[gui]` files separately, so the engine goes in `doom.js` (1.7 MB) and the game data in `wad.js`.
 
-The installer `.pkt` ships the engine without game data. Its File Script Module (`pt/installer/`) opens a page that reads the WAD you choose, checks it, draws the Desktop icon from Doomguy's face in it, and writes both into the app. `NOTES.md` has the details and what was learned on the way.
+The installer `.pkt` ships the engine without game data. Its File Script Module (`pt/installer/`) opens a page that reads the WAD you choose, checks it, draws the Desktop icon from Doomguy's face in it, and writes both into the app. The same module watches the PCs' Command Prompts: `doom` opens `play.html`, which reads the game from the PC's app and runs it in a window. `NOTES.md` has the details and what was learned on the way.
 
 ## Build
 
@@ -47,7 +47,7 @@ python tools/make_app.py
 - `dist/install-app.js` installs DOOM, WAD included, on every PC and laptop on the canvas (or those listed in `DEVICES`). Running it again updates them.
 - `dist/doom-command.js` makes typing `doom` in any PC's Command Prompt open the game in a separate window. It runs until Packet Tracer closes.
 
-To remake the installer: install the app without `[gui]wad.js` and with `dist/app/icon-generic.png` as the icon, then in **Extensions → Scripting → Edit File Script Module** import `pt/installer/ptdoom.js` (Script Engine) and `pt/installer/installer.html` (Custom Interfaces), and tick Get Network Info, Change Network Info, Change User Interface and Miscellaneous UI under General → Security. Save with Packet Tracer's own **File → Save**.
+To remake the installer: install the app without `[gui]wad.js` and with `dist/app/icon-generic.png` as the icon, then in **Extensions → Scripting → Edit File Script Module** import `pt/installer/ptdoom.js` (Script Engine) and `pt/installer/installer.html` and `play.html` (Custom Interfaces), and tick Get Network Info, Change Network Info, Change User Interface and Miscellaneous UI under General → Security. Save with Packet Tracer's own **File → Save**.
 
 ## Known issues
 

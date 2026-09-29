@@ -57,6 +57,7 @@ QtWebEngine 6.8.7 / Chrome 130. WebAssembly, **WebGL 1 and 2 on the real GPU** (
 - The debug window also shows `ReferenceError: EVENT_MANAGER is not defined` several times: harmless so far, probably Packet Tracer expecting its template scripts.
 - `changeNoteText` made a canvas note invisible (and `setCanvasItemX/Y` didn't move it); removing and re-adding the note worked.
 - Tested end to end by hand: open installer, allow, choose doom1.wad, the window reports "Installed on DOOM-PC", DOOM plays with the Doomguy icon. Freedoom 0.13.0's `freedoom1.wad` (28.8 MB, so a 38 MB `wad.js`) also installs and plays. doom.wad / doom2.wad untested.
+- **`doom` opens the game from the .pkt itself**: `ptdoom.js` polls every PC's `getCommandLine().getOutput()` (like `pt/doom-command.js`) and opens `file-sm:play.html`, which reads the app's `[gui]index.html`, `doom.js` and `wad.js` through async IPC (`getContent(true).text`) and `document.write`s the page with both scripts inline. The first version hung at "loading": the page waited on a `$se("getPlayPc", callback)` answer; it now falls back after 1 s to the first PC with the game (which path works wasn't checked).
 - The installer page's white emphasis text was invisible: Packet Tracer apparently draws the page on white; fixed colours.
 
 ## To do
