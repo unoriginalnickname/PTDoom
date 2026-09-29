@@ -6,7 +6,12 @@ It works because Packet Tracer's Desktop apps and extension windows are web page
 
 ## Play
 
-You need Packet Tracer 9.0.1 and a DOOM game file (a WAD). The shareware episode's **doom1.wad** is free to share and works. The installer also accepts `doom.wad`, `doom2.wad` and Freedoom's WADs, but only doom1.wad has been tested. This repo doesn't include one.
+You need Packet Tracer 9.0.1 and a DOOM game file (a WAD).
+
+**The WAD is not included**: it's id Software's, so you bring your own. The free shareware episode's **doom1.wad** works. To get it:
+
+- With Python: `python tools/fetch_wad.py` in a copy of this repo. It downloads doom1.wad from Debian's `doom-wad-shareware` package, checks it, and saves it as `wad/doom1.wad`.
+- Or use a copy you already have. The installer also accepts `doom.wad` (for example from DOOM on Steam or GOG), `doom2.wad` and Freedoom's WADs, but only doom1.wad has been tested.
 
 1. Download [PTDoom-installer.pkt](PTDoom-installer.pkt) and open it in Packet Tracer.
 2. Packet Tracer asks whether to allow the file's script. Allow it, and the **Install DOOM** window opens.
