@@ -10,6 +10,7 @@ You need Packet Tracer 9.0.1 and a DOOM game file (a WAD).
 
 **The WAD is not included**: it's id Software's, so you bring your own. The free shareware episode's **doom1.wad** works. To get it:
 
+- Download it from the link on Doom Wiki's [DOOM1.WAD page](https://doomwiki.org/wiki/DOOM1.WAD). The right file (v1.9) is 4,196,020 bytes, SHA-1 `5b2e249b9c5133ec987b3ea77596381dc0d6bc1d`.
 - With Python: `python tools/fetch_wad.py` in a copy of this repo. It downloads doom1.wad from Debian's `doom-wad-shareware` package, checks it, and saves it as `wad/doom1.wad`.
 - Or use a copy you already have. The installer also accepts `doom.wad` (for example from DOOM on Steam or GOG), `doom2.wad` and Freedoom's WADs, but only doom1.wad has been tested.
 
