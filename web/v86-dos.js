@@ -201,6 +201,74 @@
     return disk;
   }
 
+  // --- FM music ---------------------------------------------------------------
+
+  // v86's SB16 ignores the FM chip, so the OPL ports are taken over here and
+  // played through Nuked OPL3 (V86DATA.opl, built by tools/build_opl.py).
+  // Each register write is timestamped and applied at the matching sample of
+  // the output, so notes keep their timing within an audio buffer.
+  async function attachOpl(emu, wasmBytes) {
+    var inst = (await WebAssembly.instantiate(wasmBytes, {})).instance.exports;
+    if (inst._initialize) inst._initialize();
+    var ctx = new window.AudioContext();
+    var rate = ctx.sampleRate;
+    inst.opl_reset(rate);
+
+    var queue = [], renderT = 0;   // [time ms, register, value]...
+    var addr = [0, 0], status = 0, masks = 0;
+
+    function write(reg, value) {
+      if (reg === 0x04) {
+        // Timer control. A started timer "expires" at once: enough for the
+        // AdLib detection games do, and music doesn't use the chip's timers.
+        if (value & 0x80) { status = 0; return; }
+        masks = value & 0x60;
+        if ((value & 1) && !(masks & 0x40)) status |= 0xC0;
+        if ((value & 2) && !(masks & 0x20)) status |= 0xA0;
+        return;
+      }
+      if (reg === 0x02 || reg === 0x03) return;
+      if (ctx.state !== "running") { inst.opl_write(reg, value); return; }
+      queue.push(performance.now(), reg, value);
+    }
+
+    var dev = {}, io = emu.v86.cpu.io;
+    function status8() { return status; }
+    [0x388, 0x220, 0x228].forEach(function (p) {
+      io.register_write(p, dev, function (v) { addr[0] = v; });
+      io.register_write(p + 1, dev, function (v) { write(addr[0], v); });
+      io.register_read(p, dev, status8);
+    });
+    [0x38A, 0x222].forEach(function (p) {
+      io.register_write(p, dev, function (v) { addr[1] = v; });
+      io.register_write(p + 1, dev, function (v) { write(0x100 | addr[1], v); });
+      io.register_read(p, dev, status8);
+    });
+
+    var node = ctx.createScriptProcessor(2048, 0, 2);
+    node.onaudioprocess = function (e) {
+      var n = e.outputBuffer.length, left = e.outputBuffer.getChannelData(0), right = e.outputBuffer.getChannelData(1);
+      var bufMs = n * 1000 / rate, now = performance.now();
+      if (renderT < now - 3 * bufMs || renderT > now) renderT = now - bufMs;
+      var q = 0, i = 0;
+      function at(k) { return Math.round((queue[k] - renderT) * rate / 1000); }
+      while (i < n) {
+        while (q < queue.length && at(q) <= i) { inst.opl_write(queue[q + 1], queue[q + 2]); q += 3; }
+        var end = q < queue.length ? Math.min(n, Math.max(i + 1, at(q))) : n;
+        var ptr = inst.opl_render(end - i);
+        var pcm = new Int16Array(inst.memory.buffer, ptr, 2 * (end - i));
+        for (var s = 0; s < end - i; s++) {
+          left[i + s] = pcm[2 * s] / 32768;
+          right[i + s] = pcm[2 * s + 1] / 32768;
+        }
+        i = end;
+      }
+      queue = queue.slice(q);
+      renderT += bufMs;
+    };
+    node.connect(ctx.destination);
+  }
+
   // --- boot ------------------------------------------------------------------
 
   async function start() {
@@ -223,6 +291,10 @@
       autostart: true
     });
     window.emu = emu;
+    var opl = take("opl");
+    emu.add_listener("emulator-loaded", function () {
+      attachOpl(emu, opl).then(function () { log("FM music on"); }, function (e) { log("FM music failed: " + e.message); });
+    });
     setTimeout(function () {
       log("audio: " + (contexts.map(function (c) { return c.state; }).join(", ") || "none") +
           (window.AudioWorklet ? ", AudioWorklet still on" : ""));

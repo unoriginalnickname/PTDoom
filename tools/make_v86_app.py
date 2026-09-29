@@ -4,7 +4,7 @@ Output, in dist/v86app/:
   index.html   small page
   ptdos.js     web/v86-dos.js: unzips the game, builds drive C:, boots v86
   libv86.js    v86
-  v86data.js   BIOS, VGA BIOS, FreeDOS floppy and v86.wasm, as base64
+  v86data.js   BIOS, VGA BIOS, FreeDOS floppy, v86.wasm and opl.wasm, as base64
   game.js      the game, a .zip, as base64
   icon.png     a DOS prompt
 and dist/install-v86-app.js, pt/install-v86-app.js with this repo's path filled in.
@@ -30,6 +30,7 @@ from paths import DIST, ROOT
 V86 = ROOT / "vendor" / "v86"
 OUT = DIST / "v86app"
 FLOPPY = ROOT / "dosgames" / "freedos" / "freedos722.img"
+OPL = ROOT / "vendor" / "opl" / "opl.wasm"   # from tools/build_opl.py
 DOOM_DIR = ROOT / "dosgames" / "doom"
 
 AUTOEXEC = """@echo off
@@ -45,7 +46,8 @@ call C:\\PTDOS.BAT
 :end
 """.replace("\n", "\r\n")
 
-# v86's SB16: port 220, IRQ 5, DMA 1. No FM synthesis, so no music.
+# v86's SB16: port 220, IRQ 5, DMA 1. Music: AdLib, played by the page's own
+# OPL3 (v86 has no FM synthesis).
 DOOM_CFG = """mouse_sensitivity 5
 sfx_volume 8
 music_volume 8
@@ -53,7 +55,7 @@ show_messages 1
 use_mouse 0
 use_joystick 0
 snd_channels 8
-snd_musicdevice 0
+snd_musicdevice 3
 snd_sfxdevice 3
 snd_sbport 544
 snd_sbirq 5
@@ -146,7 +148,7 @@ def write(name: str, text: str) -> None:
 
 
 def main() -> int:
-    for f in (V86 / "libv86.js", V86 / "v86.wasm", V86 / "seabios.bin", V86 / "vgabios.bin", FLOPPY):
+    for f in (V86 / "libv86.js", V86 / "v86.wasm", V86 / "seabios.bin", V86 / "vgabios.bin", FLOPPY, OPL):
         if not f.exists():
             sys.exit(f"{f.relative_to(ROOT)} missing (see the docstring)")
     game = open(sys.argv[1], "rb").read() if len(sys.argv) > 1 else doom_zip()
@@ -162,6 +164,7 @@ def main() -> int:
         "vgabios": (V86 / "vgabios.bin").read_bytes(),
         "fda": patch_autoexec(FLOPPY.read_bytes()),
         "wasm": (V86 / "v86.wasm").read_bytes(),
+        "opl": OPL.read_bytes(),
     }))
     write("game.js", embed({"game": game}))
     make_icon().save(OUT / "icon.png")
