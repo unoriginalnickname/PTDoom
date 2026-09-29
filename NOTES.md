@@ -67,8 +67,28 @@ QtWebEngine 6.8.7 / Chrome 130. WebAssembly, **WebGL 1 and 2 on the real GPU** (
 - **First build hung at "Running..."**: `OPL_Detect` calls `OPL_Delay`, which waits for the audio callback, and a browser's single thread never runs it. Skipped under `__EMSCRIPTEN__` (the emulator is always an OPL3).
 - Engine 1,734 KB → 1,761 KB. Music tested by ear in a Packet Tracer window and in the installed app.
 
+## DOS games through js-dos (2026-09-30)
+
+Nobody seems to have run a DOS emulator or game in Packet Tracer before (searched). Test: js-dos 8.5.0 (npm `js-dos`, copied to `vendor/js-dos/`, gitignored) in a web view opened by URL, `dist/dos-test/index.html?w=1&b=<bundle>&a=0`.
+
+- **Runs**: no SharedArrayBuffer needed; `file://` XMLHttpRequest loads `emulators/wdosbox.js` + `.wasm`; `workerThread: true` works from `file://` too. `pathPrefix` must point at the local `emulators/` or js-dos goes to its CDN.
+- **Test game**: shareware DOOM 1.9 (`doom19s.zip` from idgames, in `dosgames/`, gitignored). The zip holds id's DEICE installer; `DOOMS_19.1` + `.2` concatenated are a self-extracting PKZIP that 7-Zip opens. Its DOOM1.WAD is the same file as `wad/doom1.wad`.
+- A `.jsdos` bundle is a zip with `.jsdos/dosbox.conf`; its `[autoexec]` needs `mount c .` and `c:` first, or DOSBox says "Illegal command".
+- `[sdl] autolock=true` made every click in Packet Tracer re-request pointer lock (a stream of prompts). Off, and `use_mouse 0` in DOOM's `DEFAULT.CFG`.
+- **Sound: js-dos's AudioWorklet player is broken here** (high-pitched, choppy, whatever the cycles). It's hard-coded (`audioWorklet:!0` in `js-dos.js`); the test copy patches it to `window.__ptAudioWorklet!==false` and `a=0` turns it off. The fallback ScriptProcessor player sounds right. Its buffer was also raised (2048 → 4096 per callback, queue 6144 → 16384, start at 6144); no audible difference.
+- **Speed**: `cycles=max` starves the audio; `fixed 20000` buzzed; `fixed 15000` is clean apart from crackle on gunshots, which lower volumes (sfx 5, music 6) didn't fix. Left for later: maybe 8-bit 11 kHz effects upsampled without filtering, or the ScriptProcessor running late on the main thread.
+- **Desktop app works** (`com.ptdoom.dos (Python)`, icon `C:\>_`): `tools/make_dos_app.py` writes `dist/dosapp/` and `dist/install-dos-app.js` (from `pt/install-dos-app.js`). DOS DOOM plays inside the PC's window, sounds like the file:// test, and quitting leaves DOSBox at `C:\>`.
+  - Nothing is loaded by URL: `web/ptdos-shim.js` answers `fetch` and `XMLHttpRequest` for `https://ptdos.invalid/` from base64 in `window.PTDOS_FILES`. The XHR fake shadows `readyState`/`status`/`response` with own properties.
+  - js-dos skips loading `emulators.js` when a `<script id="emulators-js">` exists, so the page includes it; then set `emulators.pathPrefix` yourself.
+  - The Worker is made from a `fetch` of `wdosbox.js` turned into a blob URL: works from the app's `data:` page too.
+  - Packet Tracer rewrites `[gui]` file names anywhere in the page, so the bundle is `bundle.jsdos` (`game.jsdos` contains `game.js`).
+  - js-dos ships non-ASCII (Russian UI strings); `make_dos_app.py` escapes it to `\uXXXX`.
+- **Performance ceiling**: DOSBox in WebAssembly has no dynamic core, and js-dos's faster JSPI build needs a newer Chrome than 130. Bigger jump: v86 (x86 to WebAssembly JIT, no SharedArrayBuffer needed), untested.
+
 ## To do
 
 Done: `doom` command tested by hand (prints the banner; with `doom-command.js` running, the game window opens too, confirmed). Pushed to https://github.com/unoriginalnickname/PTDoom (public, no-reply author email).
 
-1. Other games: a DOS emulator in the browser (js-dos / em-dosbox) for old DOS games, then maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
+1. DOS app: an installer in the .pkt that asks for a game (.jsdos or .zip), like the WAD; try other games; the gunshot crackle; cheap speed-ups (DOOM's low detail, `offscreenCanvas`).
+2. Try v86 against the same DOS DOOM test for speed.
+3. Maybe Half-Life through Xash3D (WebGL works). Check threading first: no SharedArrayBuffer.
