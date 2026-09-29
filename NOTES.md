@@ -60,6 +60,13 @@ QtWebEngine 6.8.7 / Chrome 130. WebAssembly, **WebGL 1 and 2 on the real GPU** (
 - **`doom` opens the game from the .pkt itself**: `ptdoom.js` polls every PC's `getCommandLine().getOutput()` (like `pt/doom-command.js`) and opens `file-sm:play.html`, which reads the app's `[gui]index.html`, `doom.js` and `wad.js` through async IPC (`getContent(true).text`) and `document.write`s the page with both scripts inline. The first version hung at "loading": the page waited on a `$se("getPlayPc", callback)` answer; it now falls back after 1 s to the first PC with the game (which path works wasn't checked).
 - The installer page's white emphasis text was invisible: Packet Tracer apparently draws the page on white; fixed colours.
 
+## Music (2026-09-30)
+
+- doomgeneric plays music as MIDI through SDL_mixer, which needs sound-bank files: silent. Chocolate Doom 3.0.1's OPL player (`i_oplmusic.c`, `midifile.c`) and its `opl/` library with the Nuked OPL3 emulator are copied into `src/music/`; instruments come from the WAD's GENMIDI lump. `src/doomgeneric/i_sound.c` (our copy; `build.py` prefers `src/doomgeneric/*.c` over the vendor file) picks `music_opl_module`.
+- Glue for the older doomgeneric: `PACKED_STRUCT` in `midifile.h`, `opl_driver_ver_t` and `I_Realloc` in `ptdoom_compat.*`, `SDL_endian.h` in `midifile.c`. Every change is marked `PTDoom`.
+- **First build hung at "Running..."**: `OPL_Detect` calls `OPL_Delay`, which waits for the audio callback, and a browser's single thread never runs it. Skipped under `__EMSCRIPTEN__` (the emulator is always an OPL3).
+- Engine 1,734 KB → 1,761 KB. Music tested by ear in a Packet Tracer window and in the installed app.
+
 ## To do
 
 Done: `doom` command tested by hand (prints the banner; with `doom-command.js` running, the game window opens too, confirmed). Pushed to https://github.com/unoriginalnickname/PTDoom (public, no-reply author email).

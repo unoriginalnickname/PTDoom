@@ -2,7 +2,7 @@
 
 Doom running inside Cisco Packet Tracer 9.0.1, as an app on a simulated PC's Desktop.
 
-It works because Packet Tracer's Desktop apps and extension windows are web pages in a full Chromium (QtWebEngine 6.8.7, Chrome 130) with WebAssembly. The game is [doomgeneric](https://github.com/ozkl/doomgeneric), a portable build of Chocolate Doom, compiled to WebAssembly with Emscripten.
+It works because Packet Tracer's Desktop apps and extension windows are web pages in a full Chromium (QtWebEngine 6.8.7, Chrome 130) with WebAssembly. The game is [doomgeneric](https://github.com/ozkl/doomgeneric), a portable build of Chocolate Doom, compiled to WebAssembly with Emscripten. Music plays as on a Sound Blaster: [Chocolate Doom](https://github.com/chocolate-doom/chocolate-doom)'s OPL music player and the Nuked OPL3 FM synth emulator are added from Chocolate Doom 3.0.1 (`src/music/`).
 
 ## Play
 
@@ -51,12 +51,11 @@ To remake the installer: install the app without `[gui]wad.js` and with `dist/ap
 
 ## Known issues
 
-- No music: doomgeneric's MIDI playback needs sound-bank files that aren't included. Sound effects work.
 - Audio can glitch while loading.
 - Opening an app window can disconnect packet-tracer-mcp's bridge; reopen **Extensions → MCP Bridge**.
 
 ## Licences
 
-- doomgeneric / Chocolate Doom, and so the engine in `PTDoom-installer.pkt`: GPL-2.0.
+- doomgeneric, Chocolate Doom and Nuked OPL3 (`src/`), and so the engine in `PTDoom-installer.pkt`: GPL-2.0 or later.
 - DOOM's own WADs (`doom1.wad`, `doom.wad`, `doom2.wad`): id Software's. None is included here; `tools/fetch_wad.py` downloads the shareware one.
 - Freedoom's WADs: free, under a BSD licence (not included either).

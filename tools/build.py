@@ -13,6 +13,10 @@ import sys
 from paths import ENGINE_HTML as OUT, ROOT
 
 SRC = ROOT / "vendor" / "doomgeneric" / "doomgeneric"
+# Our changed copies of doomgeneric files, used in place of the originals.
+OVERRIDES = ROOT / "src" / "doomgeneric"
+# Chocolate Doom 3.0.1's OPL music player and FM synth emulator.
+MUSIC = ROOT / "src" / "music"
 OBJ = ROOT / "build"
 
 # Same list as doomgeneric's Makefile.emscripten.
@@ -25,9 +29,10 @@ p_spec p_switch p_telept p_tick p_user r_bsp r_data r_draw r_main r_plane r_segs
 r_sky r_things sha1 sounds statdump st_lib st_stuff s_sound tables v_video
 wi_stuff w_checksum w_file w_main w_wad z_zone w_file_stdc i_input i_video
 doomgeneric doomgeneric_emscripten mus2mid i_sdlmusic i_sdlsound""".split()
+MUSIC_SOURCES = "i_oplmusic midifile opl opl_queue opl_sdl opl3 ptdoom_compat".split()
 
 CFLAGS = ["-O2", "-DFEATURE_SOUND", "-sUSE_SDL=2", "-sUSE_SDL_MIXER=2",
-          "-Wno-everything"]
+          "-Wno-everything", f"-I{SRC}", f"-I{MUSIC}"]
 LDFLAGS = ["-sALLOW_MEMORY_GROWTH=1", "-sSINGLE_FILE=1", "-sEXIT_RUNTIME=1",
            # base64, not raw bytes: Packet Tracer's file reader stops at the
            # first NUL, so the page must be plain ASCII to copy onto a PC.
@@ -50,8 +55,10 @@ def main() -> int:
     OBJ.mkdir(exist_ok=True)
     OUT.parent.mkdir(exist_ok=True)
     objs = []
-    for name in SOURCES:
-        src, obj = SRC / f"{name}.c", OBJ / f"{name}.o"
+    sources = [OVERRIDES / f"{n}.c" if (OVERRIDES / f"{n}.c").exists() else SRC / f"{n}.c" for n in SOURCES]
+    sources += [MUSIC / f"{n}.c" for n in MUSIC_SOURCES]
+    for src in sources:
+        name, obj = src.stem, OBJ / f"{src.stem}.o"
         objs.append(str(obj))
         if obj.exists() and obj.stat().st_mtime > src.stat().st_mtime:
             continue
