@@ -106,7 +106,7 @@ v86 0.5.462 (npm `v86`: `libv86.js`, `v86.wasm`; `bios/seabios.bin` and `vgabios
 
 Done: `doom` command tested by hand (prints the banner; with `doom-command.js` running, the game window opens too, confirmed). Pushed to https://github.com/unoriginalnickname/PTDoom (public, no-reply author email).
 
-1. Keys: with two keys held a third may not register (user report). Check whether native DOOM does the same (keyboard ghosting) before blaming v86.
+1. Keys: with two keys held a third may not register. Not the keyboard (user checked), and native DOOM does the same, so it's Packet Tracer's web view, not v86. v86's key path (keyboard.js, ps2.js) looked fine. Next step if it matters: a key-tester page showing which keydown/keyup events arrive.
 2. An installer in the .pkt that asks for a game (.zip), like the WAD; it has to write PTDOS.BAT (ask for the command).
 3. Floppy drive: insert a disk image while running (v86 `set_fda` / `eject_fda`). The user's idea; the Desktop probably has no drag and drop, so a button with a file picker, if a picker works in a PC's window.
 4. Before publishing FreeDOS in a .pkt: the copy.sh floppy also carries games and tools of unclear licence (ROGUE.EXE, vim, nasm...); strip them or build a clean FreeDOS floppy.
