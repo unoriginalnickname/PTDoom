@@ -4,6 +4,8 @@ Doom running inside Cisco Packet Tracer 9.0.1, as an app on a simulated PC's Des
 
 It works because Packet Tracer's Desktop apps and extension windows are web pages in a full Chromium (QtWebEngine 6.8.7, Chrome 130) with WebAssembly. The game is [doomgeneric](https://github.com/ozkl/doomgeneric), a portable build of Chocolate Doom, compiled to WebAssembly with Emscripten. Music plays as on a Sound Blaster: [Chocolate Doom](https://github.com/chocolate-doom/chocolate-doom)'s OPL music player and the Nuked OPL3 FM synth emulator are added from Chocolate Doom 3.0.1 (`src/music/`).
 
+There is also a second app, **DOS**: a whole emulated PC ([v86](https://github.com/copy/v86)) running [FreeDOS](https://www.freedos.org/), for DOS games. See [DOS games](#dos-games).
+
 ## Play
 
 You need Packet Tracer 9.0.1 and a DOOM game file (a WAD).
@@ -25,11 +27,27 @@ Controls: arrows move, Ctrl fires, Space opens doors, Enter/Esc for menus.
 
 You can also type `doom` in DOOM-PC's Command Prompt: the game opens in its own window.
 
+## DOS games
+
+A DOS PC inside the Packet Tracer PC: v86 emulates an x86 PC with a Sound Blaster 16 and boots FreeDOS from a floppy. The games you add go on drive C:. Tested with shareware DOOM and Wolfenstein 3D 1.4, both with sound and FM music.
+
+**No games are included.** Only use games you may copy: shareware, freeware, or your own copy of a commercial game. Each one is a `.zip` of the game's files, as it would sit on a hard disk (not an installer).
+
+1. Download [PTDOS-installer.pkt](https://github.com/unoriginalnickname/PTDoom/raw/master/PTDOS-installer.pkt) and open it in Packet Tracer.
+2. Allow the file's script. The **DOS games** window opens.
+3. Under **Add a game**, choose a `.zip`. Check the **Name** (up to 8 letters: what you type to start it) and the **Program** it guessed, then **Install**. Repeat for more games.
+4. Save the file under a new name (**File → Save As**).
+5. Click **DOS-PC → Desktop → DOS**. Press a key once to turn the sound on. FreeDOS lists the games; type a game's name at `C:\>`.
+
+Typing `dos` in DOS-PC's Command Prompt reopens the games window. A DOS window that is already open only sees newly added games after you close and reopen it.
+
 ## How it works
 
 A Desktop app is a project folder on the PC with an `app_manifest.xml`, a `main.py`, and page files prefixed `[gui]`. The page itself is loaded as a `data:` URL capped at 2 MB, but Packet Tracer serves the app's other `[gui]` files separately, so the engine goes in `doom.js` (1.7 MB) and the game data in `wad.js`.
 
 The installer `.pkt` ships the engine without game data. Its File Script Module (`pt/installer/`) opens a page that reads the WAD you choose, checks it, draws the Desktop icon from Doomguy's face in it, and writes both into the app. The same module watches the PCs' Command Prompts: `doom` opens `play.html`, which reads the game from the PC's app and runs it in a window. `NOTES.md` has the details and what was learned on the way.
+
+The DOS app works the same way: v86 in `[gui]libv86.js`, the BIOS, FreeDOS floppy and WebAssembly in `[gui]v86data.js`, and each game's zip in a `[gui]g<n>.js`. The page (`web/v86-dos.js`) unzips the games and builds drive C: as a FAT16 disk in memory before booting. v86 has no FM synthesis, so the page catches the AdLib ports and plays them through Nuked OPL3 compiled to its own small WebAssembly module (`src/v86opl/`). It also times the VGA retrace like a real card, without which Wolfenstein 3D hangs on a black screen. The installer's module is `pt/dos-installer/`.
 
 ## Build
 
@@ -47,6 +65,16 @@ python tools/make_app.py
 - `dist/install-app.js` installs DOOM, WAD included, on every PC and laptop on the canvas (or those listed in `DEVICES`). Running it again updates them.
 - `dist/doom-command.js` makes typing `doom` in any PC's Command Prompt open the game in a separate window. It runs until Packet Tracer closes.
 
+The DOS app needs v86 in `vendor/v86/` (`libv86.js`, `v86.wasm` and `LICENSE` from the npm package `v86`, `seabios.bin` and `vgabios.bin` from its repo's `bios/`) and FreeDOS's boot floppy at `dosgames/freedos/freedos722.img` (from `https://i.copy.sh/freedos722.img`). Then:
+
+```sh
+python tools/build_opl.py         # Nuked OPL3 as vendor/opl/opl.wasm, with emcc
+python tools/make_v86_app.py      # dist/v86app/ with shareware DOOM from dosgames/doom/
+python tools/make_v86_app.py --no-game   # no games, for the installer
+```
+
+`dist/install-v86-app.js` installs it on every PC, like `install-app.js`. The DOS installer is remade like DOOM's (below), with the app installed from a `--no-game` build and `pt/dos-installer/ptdos.js` and `installer.html` in the module.
+
 To remake the installer: install the app without `[gui]wad.js` and with `dist/app/icon-generic.png` as the icon, then in **Extensions → Scripting → Edit File Script Module** import `pt/installer/ptdoom.js` (Script Engine) and `pt/installer/installer.html` and `play.html` (Custom Interfaces), and under General → Security tick Get Network Info, Change Network Info, Change User Interface, Miscellaneous UI, and Allow opening file even if security privileges are not granted. Save with Packet Tracer's own **File → Save**.
 
 ## Known issues
@@ -57,5 +85,11 @@ To remake the installer: install the app without `[gui]wad.js` and with `dist/ap
 ## Licences
 
 - doomgeneric, Chocolate Doom and Nuked OPL3 (`src/`), and so the engine in `PTDoom-installer.pkt`: GPL-2.0 or later.
+- `PTDOS-installer.pkt` also ships:
+  - [v86](https://github.com/copy/v86) 0.5.462: BSD-2-Clause, Copyright (c) 2012, The v86 contributors. Full notice in [`licenses/v86.txt`](licenses/v86.txt).
+  - [SeaBIOS](https://www.seabios.org/) and its VGA BIOS, as distributed with v86: LGPL-3.0. Source: https://github.com/coreboot/seabios.
+  - FreeDOS, from the boot floppy image `freedos722.img` (v86's copy, trimmed): the FreeDOS kernel, the FreeCOM shell (`COMMAND.COM`), ATTRIB, EDIT, HIMEM and XCOPY, all GPL-2.0. Source: [kernel](https://github.com/FDOS/kernel), [FreeCOM](https://github.com/FDOS/freecom), and the other programs' packages at [ibiblio's FreeDOS archive](https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/). FreeDOS is a trademark of Jim Hall.
+  - Nuked OPL3 (`src/music/opl3.c`, built by `src/v86opl/`): GPL-2.0 or later.
+- DOS games: none are included. Each belongs to its publisher.
 - DOOM's own WADs (`doom1.wad`, `doom.wad`, `doom2.wad`): id Software's. None is included here; `tools/fetch_wad.py` downloads the shareware one.
 - Freedoom's WADs: free, under a BSD licence (not included either).
