@@ -30,6 +30,9 @@ doomgeneric doomgeneric_emscripten mus2mid i_sdlmusic i_sdlsound""".split()
 CFLAGS = ["-O2", "-DFEATURE_SOUND", "-sUSE_SDL=2", "-sUSE_SDL_MIXER=2",
           "-Wno-everything"]
 LDFLAGS = ["-sALLOW_MEMORY_GROWTH=1", "-sSINGLE_FILE=1", "-sEXIT_RUNTIME=1",
+           # base64, not raw bytes: Packet Tracer's file reader stops at the
+           # first NUL, so the page must be plain ASCII to copy onto a PC.
+           "-sSINGLE_FILE_BINARY_ENCODE=0",
            "-sSDL2_MIXER_FORMATS=[\"mid\"]",
            f"--embed-file={WAD}@doom1.wad",
            f"--shell-file={ROOT / 'web' / 'shell.html'}"]
