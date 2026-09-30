@@ -6,5 +6,4 @@ __pycache__/
 # Packet Tracer files, except the installer: a saved, installed copy holds the WAD.
 *.pkt
 !PTDoom-installer.pkt
-!PTDOS-installer.pkt
 dosgames/
