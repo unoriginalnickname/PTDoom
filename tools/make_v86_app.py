@@ -16,7 +16,8 @@ installer .pkt's state. Its installer page (pt/dos-installer/) adds games as
 g<n>.js and lists them in the page between the <!--games--> markers.
 
 v86 comes from vendor/v86/ (npm package v86, plus bios/*.bin from its GitHub
-repo), FreeDOS from dosgames/freedos/freedos722.img (https://i.copy.sh/freedos722.img).
+repo), FreeDOS from dosgames/freedos/freedos722.img (https://i.copy.sh/freedos722.img),
+the mouse and CD-ROM drivers from FreeDOS 1.3's packages (see TOOLS_DIR).
 """
 import base64
 import io
@@ -34,6 +35,11 @@ OUT = DIST / "v86app"
 FLOPPY = ROOT / "dosgames" / "freedos" / "freedos722.img"
 OPL = ROOT / "vendor" / "opl" / "opl.wasm"   # from tools/build_opl.py
 DOOM_DIR = ROOT / "dosgames" / "doom"
+# From FreeDOS 1.3's packages (ctmouse, udvd2, shsucdx, devload, unpacked into
+# dosgames/cdrom/): the mouse driver, loaded for every game, and for games with
+# a CD image the CD-ROM driver, the CD extensions and DEVLOAD to load the driver.
+TOOLS_DIR = ROOT / "dosgames" / "cdrom" / "BIN"
+TOOL_FILES = {"ctmouse": "CTMOUSE.EXE", "devload": "DEVLOAD.COM", "udvd2": "UDVD2.SYS", "shsucdx": "SHSUCDX.COM"}
 
 AUTOEXEC = """@echo off
 set PATH=A:\\FDOS
@@ -69,6 +75,9 @@ detaillevel 0
 usegamma 0
 """.replace("\n", "\r\n")
 
+# The canvas always fills the largest 4:3 box in the window, the shape DOS
+# games were drawn for, with no page pointer over it (only the game's cursor); !important because v86 sets its own pixel size (and a
+# scale transform) for modes such as 640x400, which then overflow the window.
 # Names the page mentions. Packet Tracer rewrites every occurrence of a [gui]
 # file's name in the page, so none may contain another.
 PAGE = """<!doctype html>
@@ -76,8 +85,9 @@ PAGE = """<!doctype html>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden}
 #screen{display:flex;align-items:center;justify-content:center;height:100%}
+#screen,#screen *{cursor:none!important}
 #screen div{white-space:pre;font:14px monospace;line-height:14px;color:#ccc}
-#screen canvas{image-rendering:pixelated;height:100%;max-width:100%;object-fit:contain}
+#screen canvas{image-rendering:pixelated;width:min(100vw,133.33vh)!important;height:min(75vw,100vh)!important;transform:none!important}
 #log{position:fixed;bottom:0;left:0;margin:0;color:#8f8;font:11px monospace;background:rgba(0,0,0,.6);z-index:99}
 </style></head><body>
 <div id="screen"><div></div><canvas style="display:none"></canvas></div><pre id="log"></pre>
@@ -227,12 +237,41 @@ def game_script(name: str, command: str, zip_bytes: bytes) -> str:
     return "window.PTDOS_GAMES=window.PTDOS_GAMES||[];PTDOS_GAMES.push(%s);\n" % json.dumps(entry)
 
 
+# v86 0.5.462 answers READ TOC from track 1 whatever starting track is asked
+# for. A CD driver asking from the lead-out (0xAA) with room for one entry
+# (UDVD2 does, for "audio disk info") then reads track 1's address as the end
+# of the disc. The current v86 source does the same. PTDOS_TOC, put first in
+# libv86.js, builds the table from the track asked for. The strings are from
+# v86's minified code.
+PTDOS_TOC = """self.PTDOS_TOC=function(start,msf,sectors){
+var out=[0,0,1,1];
+[[1,20,0],[170,22,sectors]].forEach(function(e){if(e[0]<Math.max(start,1))return;
+var l=e[2],a=msf?[0,(l+150)/4500|0,((l+150)/75|0)%60,(l+150)%75]:[l>>24&255,l>>16&255,l>>8&255,l&255];
+out.push(0,e[1],e[0],0,a[0],a[1],a[2],a[3]);});
+out[1]=out.length-2;return new Uint8Array(out);};
+"""
+TOC_PATCHES = [
+    ("y(this.data[6]);this.data_allocate(a);", "var ptStart=this.data[6];this.data_allocate(a);"),
+    ("this.data.set(new Uint8Array([0,18,1,1,0,20,1,0,a[0],a[1],a[2],a[3],0,22,170,0,b[0],b[1],b[2],b[3]]))",
+     "this.data.set(PTDOS_TOC(ptStart,c,this.sector_count).slice(0,this.data_length))"),
+]
+
+
+def patch_v86(js: str) -> str:
+    for old, new in TOC_PATCHES:
+        if js.count(old) != 1:
+            sys.exit(f"libv86.js: expected one {old[:40]!r}...: another v86 version? Check TOC_PATCHES")
+        js = js.replace(old, new)
+    return PTDOS_TOC + js
+
+
 def write(name: str, text: str) -> None:
     (OUT / name).write_text(text, encoding="ascii", newline="\n")
 
 
 def main() -> int:
-    for f in (V86 / "libv86.js", V86 / "v86.wasm", V86 / "seabios.bin", V86 / "vgabios.bin", FLOPPY, OPL):
+    for f in (V86 / "libv86.js", V86 / "v86.wasm", V86 / "seabios.bin", V86 / "vgabios.bin", FLOPPY, OPL,
+              *(TOOLS_DIR / name for name in TOOL_FILES.values())):
         if not f.exists():
             sys.exit(f"{f.relative_to(ROOT)} missing (see the docstring)")
     args = sys.argv[1:]
@@ -244,13 +283,14 @@ def main() -> int:
     tags = "".join('<script src="%s"></script>' % g["file"] for g in games)
     write("index.html", PAGE.replace("GAME_TAGS", tags))
     write("ptdos.js", (ROOT / "web" / "v86-dos.js").read_text(encoding="ascii"))
-    write("libv86.js", (V86 / "libv86.js").read_text(encoding="ascii"))
+    write("libv86.js", patch_v86((V86 / "libv86.js").read_text(encoding="ascii")))
     write("v86data.js", embed({
         "bios": (V86 / "seabios.bin").read_bytes(),
         "vgabios": (V86 / "vgabios.bin").read_bytes(),
         "fda": make_floppy(FLOPPY.read_bytes()),
         "wasm": (V86 / "v86.wasm").read_bytes(),
         "opl": OPL.read_bytes(),
+        **{key: (TOOLS_DIR / name).read_bytes() for key, name in TOOL_FILES.items()},
     }))
     for old in list(OUT.glob("g*.js")) + [OUT / "game.js"]:
         old.unlink(missing_ok=True)

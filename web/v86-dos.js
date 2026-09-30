@@ -324,8 +324,21 @@
   // C:\<NAME> with a C:\<NAME>.BAT that enters it and runs its command, so
   // typing the game's name at C:\> plays it. C:\PTDOS.BAT, run at boot,
   // lists the games.
-  async function gamesDisk(games) {
+  async function gamesDisk(games, cd) {
+    // FreeDOS tools in C:\_PTDOS, started by C:\PTDOS.BAT: the mouse driver
+    // (Dungeon Keeper won't start without one), and for a game with a CD image
+    // the CD-ROM driver (UDVD2, loaded by DEVLOAD) and the CD extensions
+    // (SHSUCDX). They're loaded here rather than in the floppy's CONFIG.SYS so
+    // games without a CD boot as before.
     var files = [], names = [];
+    var tools = [["CTMOUSE.EXE", "ctmouse"]];
+    var boot = ["C:\\_PTDOS\\CTMOUSE > NUL"];
+    if (cd) {
+      tools.push(["DEVLOAD.COM", "devload"], ["UDVD2.SYS", "udvd2"], ["SHSUCDX.COM", "shsucdx"]);
+      boot.push("C:\\_PTDOS\\DEVLOAD /Q C:\\_PTDOS\\UDVD2.SYS /D:PTDOSCD",
+                "C:\\_PTDOS\\SHSUCDX /D:PTDOSCD /Q");
+    }
+    tools.forEach(function (d) { files.push({ path: "_PTDOS/" + d[0], data: take(d[1]) }); });
     for (var g = 0; g < games.length; g++) {
       var game = games[g], name = game.name.toUpperCase();
       stripCommonFolder(await unzip(decode(game.zip))).forEach(function (f) {
@@ -337,7 +350,7 @@
       names.push(name);
       game.zip = null;
     }
-    var menu = bat(["@echo off", "echo.", "echo Games on C: " + names.join("  "), "echo Type a name to play it.", "echo."]);
+    var menu = bat(["@echo off"].concat(boot).concat(["echo.", "echo Games on C: " + names.join("  "), "echo Type a name to play it.", "echo."]));
     menu.path = "PTDOS.BAT";
     files.push(menu);
     return { disk: fat16Disk(files), names: names, count: files.filter(function (f) { return !f.dir; }).length };
@@ -346,8 +359,15 @@
   async function start() {
     // No game installed yet: FreeDOS alone, no C:.
     var disk = null, games = window.PTDOS_GAMES || [];
+    // The first game with a CD image (base64 ISO) gets the CD drive.
+    var cd = null;
+    games.forEach(function (game) {
+      if (game.cd && !cd) { cd = decode(game.cd); log(game.name + ": CD " + (cd.length / 1048576).toFixed(0) + " MB"); }
+      else if (game.cd) log(game.name + ": CD ignored, one CD drive only");
+      game.cd = null;
+    });
     if (games.length) {
-      var made = await gamesDisk(games);
+      var made = await gamesDisk(games, cd);
       disk = made.disk;
       log(made.names.join(", ") + ": " + made.count + " files, " + (disk.length / 1048576).toFixed(0) + " MB disk");
     } else {
@@ -368,6 +388,7 @@
       autostart: true
     };
     if (disk) options.hda = { buffer: disk.buffer };
+    if (cd && disk) options.cdrom = { buffer: cd.buffer };
     var emu = new V86(options);
     window.emu = emu;
     var opl = take("opl");
@@ -401,6 +422,21 @@
   }
   ["keydown", "mousedown", "pointerdown", "touchstart"].forEach(function (type) {
     window.addEventListener(type, resumeAudio, true);
+  });
+
+  // A DOS mouse only reports movement, so the page's own pointer and a game's
+  // cursor drift apart. The page's pointer is hidden over the screen (the
+  // page's CSS, tools/make_v86_app.py), so only the game's cursor shows;
+  // pushing to a window edge lines them up again, as in a windowed DOSBox.
+  // A PC's window in Packet Tracer 9.0.1 refuses pointer
+  // lock silently, but clicking still asks for it (hidden and unbounded; Esc
+  // releases it) in case a window allows it. Asked only while unlocked:
+  // js-dos asking on every click gave a stream of prompts.
+  var screenEl = document.getElementById("screen");
+  screenEl.addEventListener("mousedown", function () {
+    if (document.pointerLockElement !== screenEl && screenEl.requestPointerLock) {
+      try { var p = screenEl.requestPointerLock(); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+    }
   });
   start().catch(function (e) { log("error: " + e.message); });
 })();
