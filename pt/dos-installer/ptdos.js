@@ -4,7 +4,8 @@
 // (a Custom Interface of this module): the games window, which adds and
 // removes games. Every time, so there's always a way to add more; typing
 // `dos` in a PC's Command Prompt opens it again (the app's main.py only
-// prints; watched here, like the DOOM installer's `doom`).
+// prints; watched here, like the DOOM installer's `doom`). Its "Play in a
+// window" button opens play.html, the DOS app in a window of its own.
 var ID = "com.ptdoom.dos";
 var FOLDER = ID + " (Python)";
 var installerId = null;
@@ -20,8 +21,10 @@ function main() {
 function cleanUp() {
   if (watchTimer) clearInterval(watchTimer);
   watchTimer = null;
-  if (installerId && webViewManager.getWebView(installerId)) webViewManager.closeWebView(installerId);
-  installerId = null;
+  [installerId, playId].forEach(function (id) {
+    if (id && webViewManager.getWebView(id)) webViewManager.closeWebView(id);
+  });
+  installerId = playId = null;
 }
 
 function openGames() {
@@ -35,6 +38,22 @@ function openGames() {
   win.setCanClose(true);
   win.show();
   installerId = win.getWebViewId();
+}
+
+// The play window (play.html): the DOS app outside a PC's Desktop, where the
+// page may lock the mouse. Called by installer.html through $se().
+var playId = null;
+function openPlay() {
+  var win = playId ? webViewManager.getWebView(playId) : null;
+  if (win) {
+    win.show();
+    win.raise();
+    return;
+  }
+  win = webViewManager.createWebView("DOS", "file-sm:play.html", 1024, 768);
+  win.setCanClose(true);
+  win.show();
+  playId = win.getWebViewId();
 }
 
 function appDir(dev) {

@@ -619,15 +619,34 @@
   // cursor drift apart. The page's pointer is hidden over the screen (the
   // page's CSS, tools/make_v86_app.py), so only the game's cursor shows;
   // pushing to a window edge lines them up again, as in a windowed DOSBox.
-  // A PC's window in Packet Tracer 9.0.1 refuses pointer
-  // lock silently, but clicking still asks for it (hidden and unbounded; Esc
-  // releases it) in case a window allows it. Asked only while unlocked:
-  // js-dos asking on every click gave a stream of prompts.
+  // A PC's Desktop window in Packet Tracer 9.0.1 can't hold pointer lock (the
+  // request gets no prompt and ends unlocked), so it's only asked for in the
+  // play window (pt/dos-installer/play.html, PTDOS_PLAY_WINDOW). There a click
+  // on the screen asks (Esc releases it) and, unlike js-dos's auto-lock, that
+  // click doesn't reach the game. Asked only while unlocked: js-dos asking on
+  // every click gave a stream of prompts. Packet Tracer's prompt opens outside
+  // the window and moving the pointer onto it loses the lock, so the hint says
+  // to accept it with the keyboard.
   var screenEl = document.getElementById("screen");
-  screenEl.addEventListener("mousedown", function () {
-    if (document.pointerLockElement !== screenEl && screenEl.requestPointerLock) {
-      try { var p = screenEl.requestPointerLock(); if (p && p.catch) p.catch(function () {}); } catch (e) {}
-    }
-  });
+  if (window.PTDOS_PLAY_WINDOW && screenEl.requestPointerLock) {
+    var hint = document.createElement("div");
+    hint.textContent = "Click the screen to capture the mouse. If Packet Tracer asks, " +
+      "accept with the keyboard (Enter) without moving the mouse. Esc releases it.";
+    hint.style.cssText = "position:fixed;top:0;left:0;right:0;padding:4px 8px;text-align:center;" +
+      "font:13px sans-serif;color:#fff;background:rgba(0,0,0,.7);z-index:100;pointer-events:none";
+    document.body.appendChild(hint);
+    document.addEventListener("pointerlockchange", function () {
+      hint.style.display = document.pointerLockElement === screenEl ? "none" : "";
+    });
+    window.addEventListener("mousedown", function (e) {
+      if (document.pointerLockElement === screenEl || !screenEl.contains(e.target)) return;
+      try { var p = screenEl.requestPointerLock(); if (p && p.catch) p.catch(function () {}); } catch (err) {}
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }, true);
+    window.addEventListener("mouseup", function (e) {
+      if (document.pointerLockElement !== screenEl && screenEl.contains(e.target)) e.stopImmediatePropagation();
+    }, true);
+  }
   start().catch(function (e) { log("error: " + e.message); });
 })();

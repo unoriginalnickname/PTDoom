@@ -30,6 +30,11 @@ Only use games you may copy: shareware, freeware, or your own.</p>
 
 <h2>Installed</h2>
 <div id="games">...</div>
+<button id="play">Play in a window</button>
+<div class="hint">Opens the DOS PC in a window of its own, where clicking the game
+locks the mouse to it (keep the pointer inside while you allow it; Esc releases
+it). For mouse-look games such as Quake. The PC's Desktop &gt; DOS works too,
+but there the mouse stops at the window's edges.</div>
 
 <h2>Add a game</h2>
 <input type="file" id="pick" accept=".zip,.ZIP">
@@ -60,19 +65,25 @@ function log(text, isError) {
 }
 
 function call(obj, name, args) {
+  if (!obj) return Promise.reject(new Error("no object for " + name + " (Packet Tracer not ready?)"));
   return new Promise(function (resolve) { obj.ipcCallArgsAsync(name, args || [], resolve); });
 }
 
 // --- the PCs' app folders ----------------------------------------------------
 
+// Anything missing is skipped: this window opens as the file opens, and
+// Packet Tracer may not have every device's file system ready yet (a null
+// there gave "Cannot read properties of null (reading 'ipcCallArgsAsync')").
 async function appDirs() {
-  var net = await call(ipc, "network");
-  var count = await call(net, "getDeviceCount"), dirs = [];
+  var net = await call(typeof ipc === "undefined" ? null : ipc, "network");
+  var count = net ? await call(net, "getDeviceCount") : 0, dirs = [];
   for (var i = 0; i < count; i++) {
     var dev = await call(net, "getDeviceAt", [i]);
-    if (!(await call(dev, "getUserDesktopAppById", [ID]))) continue;
-    var fs = await call(await call(dev, "getProcess", ["FileManager"]), "getFileSystem", ["Dev:"]);
-    dirs.push({ pc: await call(dev, "getName"), dir: await call(fs, "getFile", [FOLDER]) });
+    if (!dev || !(await call(dev, "getUserDesktopAppById", [ID]))) continue;
+    var fm = await call(dev, "getProcess", ["FileManager"]);
+    var fs = fm && await call(fm, "getFileSystem", ["Dev:"]);
+    var dir = fs && await call(fs, "getFile", [FOLDER]);
+    if (dir) dirs.push({ pc: await call(dev, "getName"), dir: dir });
   }
   return dirs;
 }
@@ -110,7 +121,14 @@ async function saveGames(dir, games) {
 
 async function showGames() {
   var el = document.getElementById("games");
-  var dirs = await appDirs();
+  var dirs = [], lastError = null;
+  // Just after the file opens the PCs, or ipc itself, may not be readable yet:
+  // try for a few seconds, errors included.
+  for (var tries = 0; tries < 10 && !dirs.length; tries++) {
+    if (tries) await new Promise(function (r) { setTimeout(r, 1000); });
+    try { dirs = await appDirs(); lastError = null; } catch (e) { lastError = e; }
+  }
+  if (lastError) throw lastError;
   if (!dirs.length) { el.textContent = "No PC on the canvas has the DOS app."; return; }
   var games = await readGames(dirs[0].dir);
   el.textContent = games.length ? "" : "None yet.";
@@ -273,6 +291,11 @@ installEl.addEventListener("click", async function () {
     installEl.disabled = false;
     showGames();
   }
+});
+
+// ptdos.js opens the play window (play.html).
+document.getElementById("play").addEventListener("click", function () {
+  try { $se("openPlay"); } catch (e) { log("Couldn't open the play window: " + e.message, true); }
 });
 
 showGames().catch(function (e) { document.getElementById("games").textContent = "Couldn't read the games: " + e.message; });
