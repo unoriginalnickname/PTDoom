@@ -49,6 +49,8 @@ python tools/make_app.py
 - `dist/install-app.js` installs DOOM, WAD included, on every PC and laptop on the canvas (or those listed in `DEVICES`). Running it again updates them.
 - `dist/doom-command.js` makes typing `doom` in any PC's Command Prompt open the game in a separate window. It runs until Packet Tracer closes.
 
+To remake the installer: install the app without `[gui]wad.js` and with `dist/app/icon-generic.png` as the icon, then in **Extensions → Scripting → Edit File Script Module** import `pt/installer/ptdoom.js` (Script Engine) and `pt/installer/installer.html` and `play.html` (Custom Interfaces), and under General → Security tick Get Network Info, Change Network Info, Change User Interface, Miscellaneous UI, and Allow opening file even if security privileges are not granted. Save with Packet Tracer's own **File → Save**.
+
 ## Known issues
 
 - Audio can glitch while loading.
