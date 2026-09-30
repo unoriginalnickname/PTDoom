@@ -1,0 +1,16 @@
+Begin3
+Title:          UDVD2
+Version:        2022-12-12
+Entered-date:   2022-12-12
+Description:    CD/DVD UltraDMA device driver
+Keywords:       cd, disk, dma, driver, dvd, ultra
+Author:         Jack R. Ellis
+Maintained-by:  Mercury Thirteen (mercury0x0d@protonmail.com)
+Primary-Site:   https://gitlab.com/FreeDOS/drivers/udvd2
+Platforms:      DOS
+Copying-policy: Free w/sources
+Packager:       .gitlab-fpkg.sh v0.4.4
+Modified-date:  2022-12-13.0
+Git-Site:       https://gitlab.com/FreeDOS/drivers/udvd2
+Git-Commit:     d2439dfb
+End

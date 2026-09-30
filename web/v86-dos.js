@@ -299,6 +299,174 @@
     io.register_read(0x3BA, vga, status);
   }
 
+  // --- CD audio --------------------------------------------------------------
+
+  // v86's CD drive has data only. Its CD commands go through PTDOS_ATAPI
+  // first (tools/make_v86_app.py patches that in), and the page answers the
+  // audio side: a table of contents with the game's music as audio tracks
+  // after the data track, PLAY AUDIO, pause, stop, and the audio status and
+  // position that DOS CD players poll (the Miles Sound System's, in Dungeon
+  // Keeper). Each track is an <audio> element, decoded as it plays: all of
+  // Dungeon Keeper's music decoded at once would take about 600 MB.
+  var cdTracks = null;   // [{number, control, start, sectors, audio}], data track first
+  var cdPlay = null;     // {track (index), end (LBA)} while playing or paused
+  var cdStatus = 0x15;   // 0x11 playing, 0x12 paused, 0x13 finished, 0x15 nothing to report
+
+  async function makeCdTracks(dataSectors, music) {
+    var tracks = [{ number: 1, control: 0x14, start: 0, sectors: dataSectors }];
+    var lba = dataSectors + 150;  // the 2-second gap before the first audio track
+    for (var i = 0; i < music.length; i++) {
+      var audio = new Audio(), m = music[i];
+      audio.preload = "auto";
+      audio.src = URL.createObjectURL(new Blob([m.data], { type: m.type }));
+      await new Promise(function (ok, fail) {
+        audio.onloadedmetadata = ok;
+        audio.onerror = function () { fail(new Error("can't play " + m.name)); };
+      });
+      var sectors = Math.round(audio.duration * 75);
+      tracks.push({ number: m.number, control: 0x10, start: lba, sectors: sectors, audio: audio });
+      lba += sectors;
+      m.data = null;
+    }
+    return tracks;
+  }
+
+  function cdEnd() { var t = cdTracks[cdTracks.length - 1]; return t.start + t.sectors; }
+  function cdAddr(lba, msf) {
+    if (!msf) return [lba >>> 24 & 255, lba >> 16 & 255, lba >> 8 & 255, lba & 255];
+    lba += 150;
+    return [0, lba / 4500 | 0, (lba / 75 | 0) % 60, lba % 75];
+  }
+  function cdTrackAt(lba) {
+    for (var i = cdTracks.length - 1; i > 0; i--) {
+      if (lba >= cdTracks[i].start && lba < cdTracks[i].start + cdTracks[i].sectors) return i;
+    }
+    return -1;
+  }
+  function cdPosition() {
+    if (!cdPlay) return 0;
+    var t = cdTracks[cdPlay.track];
+    return t.start + Math.floor(t.audio.currentTime * 75);
+  }
+  function cdStart(i, seconds) {
+    var a = cdTracks[i].audio;
+    a.currentTime = seconds;
+    var p = a.play();
+    if (p && p.catch) p.catch(function (e) { log("CD music: " + e.message); });
+  }
+  function cdStop() {
+    if (cdPlay) cdTracks[cdPlay.track].audio.pause();
+    cdPlay = null;
+    cdStatus = 0x15;
+  }
+  function cdPlayFrom(from, to) {
+    cdStop();
+    var i = cdTrackAt(from);
+    if (i < 0) return false;
+    cdPlay = { track: i, end: Math.min(to, cdEnd()) };
+    cdStart(i, (from - cdTracks[i].start) / 75);
+    cdStatus = 0x11;
+    return true;
+  }
+  // Stop at the end asked for, or go on into the next track.
+  setInterval(function () {
+    if (!cdPlay || cdStatus !== 0x11) return;
+    var t = cdTracks[cdPlay.track];
+    if (cdPosition() < cdPlay.end && !t.audio.ended) return;
+    if (t.audio.ended && cdPlay.end > t.start + t.sectors && cdPlay.track + 1 < cdTracks.length) {
+      cdPlay.track++;
+      cdStart(cdPlay.track, 0);
+      return;
+    }
+    cdStop();
+    cdStatus = 0x13;
+  }, 100);
+
+  function atapiData(ide, bytes, length) {
+    ide.data_allocate(Math.min(length, bytes.length));
+    ide.data.set(bytes.slice(0, ide.data_length));
+    ide.data_end = ide.data_length;
+    ide.status_reg = 0x58;  // ready, seek complete, data to read
+  }
+  function atapiDone(ide) {
+    ide.data_allocate(0);
+    ide.data_end = ide.data_length;
+    ide.status_reg = 0x50;  // ready, seek complete
+  }
+  function msfLba(d, at) { return (d[at] * 60 + d[at + 1]) * 75 + d[at + 2] - 150; }
+
+  // For testing: what the CD is playing.
+  window.PTDOS_CD_STATE = function () {
+    var t = cdPlay && cdTracks[cdPlay.track];
+    return { status: cdStatus.toString(16), track: t ? t.number : null, seconds: t ? +t.audio.currentTime.toFixed(1) : null };
+  };
+
+  // True when the command is answered here; v86 does the rest.
+  self.PTDOS_ATAPI = function (ide, cmd) {
+    if (!cdTracks) return false;
+    var d = ide.data, msf = (d[1] & 2) !== 0;
+    switch (cmd) {
+      case 0x43:  // READ TOC: format 0, from the track asked for
+        if (d[9] >> 6 !== 0 || (d[2] & 15) !== 0) return false;
+        var start = d[6], last = cdTracks[cdTracks.length - 1];
+        var out = [0, 0, cdTracks[0].number, last.number];
+        cdTracks.concat([{ number: 0xAA, control: last.control, start: cdEnd() }]).forEach(function (t) {
+          if (t.number !== 0xAA && t.number < Math.max(start, 1)) return;
+          out.push(0, t.control, t.number, 0);
+          out.push.apply(out, cdAddr(t.start, msf));
+        });
+        out[1] = out.length - 2;
+        atapiData(ide, out, d[7] << 8 | d[8]);
+        return true;
+      case 0x42:  // READ SUB-CHANNEL: audio status, and the position when asked
+        var status = cdStatus, pos = cdPosition(), reply = [0, status, 0, 0];
+        if (cdStatus === 0x13) cdStatus = 0x15;  // "finished" is reported once
+        if ((d[2] & 0x40) && d[3] === 1) {
+          var i = cdPlay ? cdPlay.track : 0, t = cdTracks[i];
+          reply = reply.concat([1, t.control, t.number, 1], cdAddr(pos, msf),
+                               msf ? cdAddr(pos - t.start - 150, true) : cdAddr(pos - t.start, false));
+          reply[3] = 12;
+        }
+        atapiData(ide, reply, d[7] << 8 | d[8]);
+        return true;
+      case 0x5A:  // MODE SENSE (10), page 2A: a drive that plays audio
+        if ((d[2] & 63) !== 0x2A) return false;
+        atapiData(ide, [0, 28, 1, 0, 0, 0, 0, 0, 0x2A, 20, 3, 0, 0x71, 0x7F, 0x29, 3,
+                        2, 194, 1, 0, 0, 128, 2, 194, 0, 0, 0, 0, 0, 0], d[7] << 8 | d[8]);
+        return true;
+      case 0x47:  // PLAY AUDIO MSF
+      case 0x45:  // PLAY AUDIO (10)
+      case 0xA5:  // PLAY AUDIO (12)
+        var from, to;
+        if (cmd === 0x47) { from = msfLba(d, 3); to = msfLba(d, 6); }
+        else {
+          from = (d[2] << 24 | d[3] << 16 | d[4] << 8 | d[5]) >>> 0;
+          to = from + (cmd === 0x45 ? d[7] << 8 | d[8] : (d[6] << 24 | d[7] << 16 | d[8] << 8 | d[9]) >>> 0);
+        }
+        if (to <= from) { cdStop(); atapiDone(ide); return true; }
+        if (!cdPlayFrom(from, to)) {
+          ide.atapi_check_condition_response(5, 0x64);  // illegal mode for this track
+          return true;
+        }
+        atapiDone(ide);
+        return true;
+      case 0x4B:  // PAUSE/RESUME
+        if (cdPlay && (d[8] & 1) && cdStatus === 0x12) { cdStart(cdPlay.track, cdTracks[cdPlay.track].audio.currentTime); cdStatus = 0x11; }
+        else if (cdPlay && !(d[8] & 1) && cdStatus === 0x11) { cdTracks[cdPlay.track].audio.pause(); cdStatus = 0x12; }
+        atapiDone(ide);
+        return true;
+      case 0x4E:  // STOP PLAY/SCAN
+      case 0x2B:  // SEEK
+        cdStop();
+        atapiDone(ide);
+        return true;
+      case 0x1B:  // START STOP UNIT: stopping also stops the music
+        if (!(d[4] & 1)) cdStop();
+        return false;
+    }
+    return false;
+  };
+
   // --- boot ------------------------------------------------------------------
 
   // A zip whose files all sit in one folder gets that folder dropped, so
@@ -320,28 +488,30 @@
     return { path: "", data: new TextEncoder().encode(lines.join("\r\n") + "\r\n") };
   }
 
+  // A game's CD music, as files in its zip: CDAUDIO\TRACK02.OGG and on, one
+  // per audio track of the CD (MP3, WAV, FLAC and OPUS play too). They become
+  // the CD's audio tracks, not files on C:.
+  var CD_TRACK = /^CDAUDIO\/TRACK(\d\d)\.(OGG|MP3|WAV|FLAC|OPUS)$/i;
+  var CD_TYPES = { OGG: "audio/ogg", MP3: "audio/mpeg", WAV: "audio/wav", FLAC: "audio/flac", OPUS: "audio/ogg" };
+
   // Each installed game ([gui]g<n>.js, from the installer) is a folder
   // C:\<NAME> with a C:\<NAME>.BAT that enters it and runs its command, so
   // typing the game's name at C:\> plays it. C:\PTDOS.BAT, run at boot,
   // lists the games.
   async function gamesDisk(games, cd) {
-    // FreeDOS tools in C:\_PTDOS, started by C:\PTDOS.BAT: the mouse driver
-    // (Dungeon Keeper won't start without one), and for a game with a CD image
-    // the CD-ROM driver (UDVD2, loaded by DEVLOAD) and the CD extensions
-    // (SHSUCDX). They're loaded here rather than in the floppy's CONFIG.SYS so
-    // games without a CD boot as before.
-    var files = [], names = [];
-    var tools = [["CTMOUSE.EXE", "ctmouse"]];
-    var boot = ["C:\\_PTDOS\\CTMOUSE > NUL"];
-    if (cd) {
-      tools.push(["DEVLOAD.COM", "devload"], ["UDVD2.SYS", "udvd2"], ["SHSUCDX.COM", "shsucdx"]);
-      boot.push("C:\\_PTDOS\\DEVLOAD /Q C:\\_PTDOS\\UDVD2.SYS /D:PTDOSCD",
-                "C:\\_PTDOS\\SHSUCDX /D:PTDOSCD /Q");
-    }
-    tools.forEach(function (d) { files.push({ path: "_PTDOS/" + d[0], data: take(d[1]) }); });
+    var files = [], names = [], music = [], musicOf = null;
     for (var g = 0; g < games.length; g++) {
       var game = games[g], name = game.name.toUpperCase();
       stripCommonFolder(await unzip(decode(game.zip))).forEach(function (f) {
+        var track = !f.dir && f.path.toUpperCase().match(CD_TRACK);
+        if (track) {
+          // One CD drive: the first game with music gets it.
+          if (!musicOf || musicOf === name) {
+            musicOf = name;
+            music.push({ number: +track[1], name: f.path, type: CD_TYPES[track[2].toUpperCase()], data: f.data });
+          }
+          return;
+        }
         files.push({ path: name + "/" + f.path, data: f.data, dir: f.dir });
       });
       var run = bat(["@echo off", "cd \\" + name].concat(game.command ? game.command.split(/\r?\n/) : []).concat(["cd \\"]));
@@ -350,10 +520,25 @@
       names.push(name);
       game.zip = null;
     }
+    music.sort(function (a, b) { return a.number - b.number; });
+    // FreeDOS tools in C:\_PTDOS, started by C:\PTDOS.BAT: the mouse driver
+    // (Dungeon Keeper won't start without one), and with a CD the CD-ROM
+    // driver (UDVD2, loaded by DEVLOAD) and the CD extensions (SHSUCDX).
+    // They're loaded here rather than in the floppy's CONFIG.SYS so games
+    // without a CD boot as before.
+    var tools = [["CTMOUSE.EXE", "ctmouse"]];
+    var boot = ["C:\\_PTDOS\\CTMOUSE > NUL"];
+    if (cd || music.length) {
+      tools.push(["DEVLOAD.COM", "devload"], ["UDVD2.SYS", "udvd2"], ["SHSUCDX.COM", "shsucdx"]);
+      boot.push("C:\\_PTDOS\\DEVLOAD /Q C:\\_PTDOS\\UDVD2.SYS /D:PTDOSCD",
+                "C:\\_PTDOS\\SHSUCDX /D:PTDOSCD /Q");
+    }
+    tools.forEach(function (d) { files.push({ path: "_PTDOS/" + d[0], data: take(d[1]) }); });
     var menu = bat(["@echo off"].concat(boot).concat(["echo.", "echo Games on C: " + names.join("  "), "echo Type a name to play it.", "echo."]));
     menu.path = "PTDOS.BAT";
     files.push(menu);
-    return { disk: fat16Disk(files), names: names, count: files.filter(function (f) { return !f.dir; }).length };
+    return { disk: fat16Disk(files), names: names, count: files.filter(function (f) { return !f.dir; }).length,
+             music: music, musicOf: musicOf };
   }
 
   async function start() {
@@ -370,6 +555,12 @@
       var made = await gamesDisk(games, cd);
       disk = made.disk;
       log(made.names.join(", ") + ": " + made.count + " files, " + (disk.length / 1048576).toFixed(0) + " MB disk");
+      // Music with no CD image: an empty data track, then the music.
+      if (made.music.length && !cd) cd = take("cdempty");
+      if (cd) {
+        cdTracks = await makeCdTracks(cd.length / 2048, made.music);
+        if (made.music.length) log(made.musicOf + ": CD music, " + made.music.length + " tracks");
+      }
     } else {
       log("no games installed");
     }

@@ -37,9 +37,11 @@ OPL = ROOT / "vendor" / "opl" / "opl.wasm"   # from tools/build_opl.py
 DOOM_DIR = ROOT / "dosgames" / "doom"
 # From FreeDOS 1.3's packages (ctmouse, udvd2, shsucdx, devload, unpacked into
 # dosgames/cdrom/): the mouse driver, loaded for every game, and for games with
-# a CD image the CD-ROM driver, the CD extensions and DEVLOAD to load the driver.
+# a CD the CD extensions and DEVLOAD, which loads the CD-ROM driver (UDVD2,
+# FreeDOS's with CD audio functions added: tools/build_udvd2.py).
 TOOLS_DIR = ROOT / "dosgames" / "cdrom" / "BIN"
-TOOL_FILES = {"ctmouse": "CTMOUSE.EXE", "devload": "DEVLOAD.COM", "udvd2": "UDVD2.SYS", "shsucdx": "SHSUCDX.COM"}
+TOOL_FILES = {"ctmouse": "CTMOUSE.EXE", "devload": "DEVLOAD.COM", "shsucdx": "SHSUCDX.COM"}
+UDVD2 = ROOT / "vendor" / "udvd2" / "UDVD2.SYS"   # from tools/build_udvd2.py
 
 AUTOEXEC = """@echo off
 set PATH=A:\\FDOS
@@ -237,32 +239,66 @@ def game_script(name: str, command: str, zip_bytes: bytes) -> str:
     return "window.PTDOS_GAMES=window.PTDOS_GAMES||[];PTDOS_GAMES.push(%s);\n" % json.dumps(entry)
 
 
-# v86 0.5.462 answers READ TOC from track 1 whatever starting track is asked
-# for. A CD driver asking from the lead-out (0xAA) with room for one entry
-# (UDVD2 does, for "audio disk info") then reads track 1's address as the end
-# of the disc. The current v86 source does the same. PTDOS_TOC, put first in
-# libv86.js, builds the table from the track asked for. The strings are from
-# v86's minified code.
-PTDOS_TOC = """self.PTDOS_TOC=function(start,msf,sectors){
-var out=[0,0,1,1];
-[[1,20,0],[170,22,sectors]].forEach(function(e){if(e[0]<Math.max(start,1))return;
-var l=e[2],a=msf?[0,(l+150)/4500|0,((l+150)/75|0)%60,(l+150)%75]:[l>>24&255,l>>16&255,l>>8&255,l&255];
-out.push(0,e[1],e[0],0,a[0],a[1],a[2],a[3]);});
-out[1]=out.length-2;return new Uint8Array(out);};
-"""
-TOC_PATCHES = [
-    ("y(this.data[6]);this.data_allocate(a);", "var ptStart=this.data[6];this.data_allocate(a);"),
-    ("this.data.set(new Uint8Array([0,18,1,1,0,20,1,0,a[0],a[1],a[2],a[3],0,22,170,0,b[0],b[1],b[2],b[3]]))",
-     "this.data.set(PTDOS_TOC(ptStart,c,this.sector_count).slice(0,this.data_length))"),
+# v86 0.5.462's CD drive is data only: no audio tracks, no PLAY AUDIO, and it
+# answers READ TOC from track 1 whatever track is asked for. One patch lets the
+# page answer CD commands first: self.PTDOS_ATAPI(ide, command) returns true
+# when it has (web/v86-dos.js: table of contents, sub-channel, audio
+# capabilities, play, pause, stop). The string is from v86's minified code.
+ATAPI_PATCHES = [
+    ("else{switch(a){case 0:this.buffer?",
+     "else{if(!(self.PTDOS_ATAPI&&self.PTDOS_ATAPI(this,a)))switch(a){case 0:this.buffer?"),
 ]
 
 
 def patch_v86(js: str) -> str:
-    for old, new in TOC_PATCHES:
+    for old, new in ATAPI_PATCHES:
         if js.count(old) != 1:
-            sys.exit(f"libv86.js: expected one {old[:40]!r}...: another v86 version? Check TOC_PATCHES")
+            sys.exit(f"libv86.js: expected one {old[:40]!r}...: another v86 version? Check ATAPI_PATCHES")
         js = js.replace(old, new)
-    return PTDOS_TOC + js
+    return js
+
+
+def empty_iso(label: str = "PTDOSCD") -> bytes:
+    """An empty ISO 9660 disc: the data track of a CD made of a game's music."""
+    sector, root_at, total = 2048, 20, 32
+
+    def both16(v: int) -> bytes:
+        return v.to_bytes(2, "little") + v.to_bytes(2, "big")
+
+    def both32(v: int) -> bytes:
+        return v.to_bytes(4, "little") + v.to_bytes(4, "big")
+
+    def record(name: bytes) -> bytes:
+        body = (bytes([0]) + both32(root_at) + both32(sector) + bytes([97, 9, 30, 0, 0, 0, 0])
+                + bytes([2, 0, 0]) + both16(1) + bytes([len(name)]) + name)
+        rec = bytes([len(body) + 1]) + body
+        return rec + bytes(len(rec) & 1)
+
+    iso = bytearray(total * sector)
+    pvd = bytearray(sector)
+    pvd[0:7] = b"\x01CD001\x01"
+    pvd[8:40] = b" " * 32
+    pvd[40:72] = label.encode("ascii").ljust(32)
+    pvd[80:88] = both32(total)
+    pvd[120:124] = both16(1)
+    pvd[124:128] = both16(1)
+    pvd[128:132] = both16(sector)
+    pvd[132:140] = both32(10)
+    pvd[140:144] = (18).to_bytes(4, "little")
+    pvd[148:152] = (19).to_bytes(4, "big")
+    pvd[156:190] = record(b"\x00")
+    pvd[190:813] = b" " * 623
+    for at in (813, 830, 847, 864):
+        pvd[at:at + 17] = b"0" * 16 + b"\x00"
+    pvd[881] = 1
+    iso[16 * sector:17 * sector] = pvd
+    iso[17 * sector:17 * sector + 7] = b"\xffCD001\x01"
+    for at, order in ((18, "little"), (19, "big")):
+        iso[at * sector:at * sector + 10] = (bytes([1, 0]) + root_at.to_bytes(4, order)
+                                             + (1).to_bytes(2, order) + bytes(2))
+    root = record(b"\x00") + record(b"\x01")
+    iso[root_at * sector:root_at * sector + len(root)] = root
+    return bytes(iso)
 
 
 def write(name: str, text: str) -> None:
@@ -271,7 +307,7 @@ def write(name: str, text: str) -> None:
 
 def main() -> int:
     for f in (V86 / "libv86.js", V86 / "v86.wasm", V86 / "seabios.bin", V86 / "vgabios.bin", FLOPPY, OPL,
-              *(TOOLS_DIR / name for name in TOOL_FILES.values())):
+              UDVD2, *(TOOLS_DIR / name for name in TOOL_FILES.values())):
         if not f.exists():
             sys.exit(f"{f.relative_to(ROOT)} missing (see the docstring)")
     args = sys.argv[1:]
@@ -291,6 +327,8 @@ def main() -> int:
         "wasm": (V86 / "v86.wasm").read_bytes(),
         "opl": OPL.read_bytes(),
         **{key: (TOOLS_DIR / name).read_bytes() for key, name in TOOL_FILES.items()},
+        "udvd2": UDVD2.read_bytes(),
+        "cdempty": empty_iso(),
     }))
     for old in list(OUT.glob("g*.js")) + [OUT / "game.js"]:
         old.unlink(missing_ok=True)
